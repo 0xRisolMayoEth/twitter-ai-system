@@ -191,36 +191,8 @@ class Orchestrator:
 
     # ------------------------------------------------------------------
     # Tahap 6 — Dispatcher
-    # [Implementasi penuh: Tahap 7 upgrade]
     # ------------------------------------------------------------------
     def _dispatch(self, package: ContentPackage) -> int:
-        """
-        [Tahap 7] Format & kirim ke Telegram, simpan ke DB + embedding.
-        Stub sekarang: simpan ke DB lengkap + simpan embedding.
-        Telegram dispatch format baru aktif di Tahap 7.
-        """
-        from database.db_manager import save_tweet_full, save_topic_used, update_tweet_sent
-        from database.dedup import check_and_save
-
-        # Simpan ke DB dengan semua metadata
-        tweet_id = save_tweet_full(
-            topic=package.topic,
-            content_jp=package.japanese,
-            content_indo=package.indonesian,
-            draft_jp=package.japanese,
-            score=package.score,
-            score_breakdown=package.score_breakdown,
-            angle_type=package.angle_type,
-        )
-
-        # Simpan embedding untuk dedup konten berikutnya
-        check_and_save(tweet_id, package.japanese)
-
-        # Catat ke memory
-        save_topic_used(package.topic, angle_type=package.angle_type)
-
-        logger.info("[STUB] Konten #%d tersimpan (Telegram dispatch aktif di Tahap 7)", tweet_id)
-        logger.info("  [JP] %s", package.japanese)
-        logger.info("  [ID] %s", package.indonesian)
-        logger.info("  Skor: %d/100 | Angle: %s", package.score, package.angle_type)
-        return tweet_id
+        """Format & kirim ke Telegram, simpan ke DB + embedding."""
+        from agents.dispatcher import dispatch
+        return dispatch(package)
