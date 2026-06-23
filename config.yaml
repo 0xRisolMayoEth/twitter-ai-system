@@ -86,6 +86,25 @@ rss_sources:
     language: "en"
 
 # -----------------------------------------------------------
+# Trend scouting settings
+# -----------------------------------------------------------
+trend_scout:
+  max_age_hours: 48    # buang topik lebih tua dari ini
+  max_per_feed: 5      # maksimal entry per feed RSS
+  max_candidates: 20   # jumlah kandidat yang dikembalikan ke pipeline
+
+# Topik fallback jika semua sumber RSS gagal
+fallback_topics:
+  - "AI技術の最新動向"
+  - "日本のゲーム新作情報"
+  - "アニメ新シーズン注目作品"
+  - "SNSで話題のトレンド"
+  - "テクノロジースタートアップ最新情報"
+  - "VTuber界隈の最新ニュース"
+  - "インターネットミームと流行"
+  - "スマートフォン最新情報"
+
+# -----------------------------------------------------------
 # Google Trends Japan (via pytrends)
 # -----------------------------------------------------------
 google_trends:

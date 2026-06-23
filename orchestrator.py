@@ -9,8 +9,9 @@ penuh di tahap upgrade masing-masing. Saat ini sebagian masih stub
 yang memanggil modul lama agar sistem tetap bisa jalan.
 """
 import logging
+import random
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 from core.config import load_config
 from core.logger import get_logger
@@ -92,24 +93,19 @@ class Orchestrator:
 
     # ------------------------------------------------------------------
     # Tahap 1 — Trend Scout
-    # [Implementasi penuh: Tahap 3 upgrade]
     # ------------------------------------------------------------------
     def _scout_trend(self) -> Optional[TrendCandidate]:
-        """Cari topik segar dari RSS + Google Trends."""
-        # Stub: pakai trend.py lama
-        from agents.trend import get_trending_topics
-        topics = get_trending_topics()
-        if not topics:
+        """
+        Cari topik segar dari RSS feeds + Google Trends JP.
+        Pilih secara acak dari top-5 untuk variasi tiap run.
+        """
+        from agents.trend_scout import scout_trends
+        candidates = scout_trends()
+        if not candidates:
             return None
-        t = topics[0]
-        return TrendCandidate(
-            topic=t["title"],
-            source=t.get("source", "rss"),
-            url=t.get("url", ""),
-            freshness=datetime.now(timezone.utc),
-            raw_summary=t.get("title", ""),
-            category=t.get("category", ""),
-        )
+        # Acak dari top-5 agar tidak selalu pakai kandidat pertama
+        top = candidates[:min(5, len(candidates))]
+        return random.choice(top)
 
     # ------------------------------------------------------------------
     # Tahap 2 — Strategist
