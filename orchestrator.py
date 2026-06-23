@@ -125,31 +125,51 @@ class Orchestrator:
 
     # ------------------------------------------------------------------
     # Tahap 4 — Critic ⇄ Reviser loop
-    # [Implementasi penuh: Tahap 6 upgrade]
     # ------------------------------------------------------------------
     def _critic_revise_loop(self, draft: TweetDraft) -> ContentPackage:
         """
-        Loop penilaian & revisi, maks self.max_revisions kali.
-        Saat ini stub: satu round dengan critic.py lama (skor 1-10 → 0-100).
+        Loop Critic ⇄ Reviser maks self.max_revisions kali.
+        Lacak draft terbaik (skor tertinggi) — bukan hanya yang terakhir.
+        Berhenti lebih awal jika skor ≥ threshold.
         """
-        from agents.critic import review_tweet
-        review = review_tweet(draft.japanese)
+        from agents.critic_v2 import review
+        from agents.reviser import revise
 
-        # Konversi skor lama (1-10) ke skala baru (0-100)
-        raw_score = review.get("skor", 7)
-        score = min(100, int(raw_score * 10))
-        below = score < self.threshold
+        current_draft = draft
+        best_draft = draft
+        best_score = -1
+        best_breakdown: dict = {}
+        revision_count = 0
+
+        for iteration in range(self.max_revisions + 1):
+            critic = review(current_draft)
+
+            if critic.score > best_score:
+                best_score = critic.score
+                best_breakdown = critic.breakdown
+                best_draft = current_draft
+
+            if critic.score >= self.threshold:
+                logger.info("Critic loop berhenti di iterasi %d (skor %d ≥ threshold %d)",
+                            iteration, critic.score, self.threshold)
+                break
+
+            if iteration == self.max_revisions:
+                break  # habis jatah, pakai best sejauh ini
+
+            current_draft = revise(current_draft, critic)
+            revision_count += 1
 
         return ContentPackage(
-            topic=draft.topic,
-            source_url=draft.source_url,
-            angle_type=draft.angle_type,
-            japanese=review.get("tweet_revisi", draft.japanese),
-            indonesian=draft.indonesian,
-            score=score,
-            score_breakdown={"legacy_skor": raw_score},
-            below_threshold=below,
-            revision_count=0,
+            topic=best_draft.topic,
+            source_url=best_draft.source_url,
+            angle_type=best_draft.angle_type,
+            japanese=best_draft.japanese,
+            indonesian=best_draft.indonesian,
+            score=best_score,
+            score_breakdown=best_breakdown,
+            below_threshold=best_score < self.threshold,
+            revision_count=revision_count,
         )
 
     # ------------------------------------------------------------------
