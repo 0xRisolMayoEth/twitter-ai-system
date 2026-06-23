@@ -109,41 +109,19 @@ class Orchestrator:
 
     # ------------------------------------------------------------------
     # Tahap 2 — Strategist
-    # [Implementasi penuh: Tahap 4 upgrade]
     # ------------------------------------------------------------------
     def _strategize(self, trend: TrendCandidate) -> StrategistOutput:
         """Pilih angle berpotensi engagement tinggi via LLM."""
-        # Stub: angle tetap, akan diganti LLM call di Tahap 4
-        niche = self.config.get("niche", "")
-        return StrategistOutput(
-            topic=trend.topic,
-            source_url=trend.url,
-            angle_type="news_insight",
-            angle_description=f"Insight singkat tentang {trend.topic} untuk audiens Jepang",
-            reasoning="[stub — Strategist akan diimplementasi di Tahap 4]",
-        )
+        from agents.strategist import pick_angle
+        return pick_angle(trend)
 
     # ------------------------------------------------------------------
     # Tahap 3 — Creator (Writer)
-    # [Implementasi penuh: Tahap 5 upgrade]
     # ------------------------------------------------------------------
     def _create(self, strategy: StrategistOutput) -> TweetDraft:
         """Tulis tweet JP + ID berdasarkan angle dari Strategist."""
-        # Stub: pakai writer.py lama
-        from agents.writer import write_tweet
-        content = write_tweet(
-            strategy.topic,
-            strategy.angle_description,
-            [],
-        )
-        # writer.py lama belum bilingual — keduanya pakai hasil yang sama
-        return TweetDraft(
-            japanese=content,
-            indonesian=content,
-            topic=strategy.topic,
-            angle_type=strategy.angle_type,
-            source_url=strategy.source_url,
-        )
+        from agents.creator import create_tweet
+        return create_tweet(strategy)
 
     # ------------------------------------------------------------------
     # Tahap 4 — Critic ⇄ Reviser loop
