@@ -41,12 +41,18 @@ class Orchestrator:
         Jalankan satu siklus penuh.
         Satu konten gagal tidak menghentikan siklus lain.
         """
-        logger.info("=== Mulai siklus produksi ===")
+        from database.db_manager import start_run, finish_run
+        run_id = start_run()
+        produced = 0
+        errors = 0
+
+        logger.info("=== Mulai siklus produksi (run #%d) ===", run_id)
         try:
             # Tahap 1: Cari trend
             trend = self._scout_trend()
             if not trend:
                 logger.warning("Tidak ada trend segar, siklus dibatalkan")
+                finish_run(run_id, produced=0, errors=0)
                 return RunResult(success=False, reason="no_trend")
             logger.info(f"Trend: '{trend.topic}' [{trend.source}]")
 
@@ -68,15 +74,20 @@ class Orchestrator:
             # Tahap 6: Cek duplikat semantik
             if not self._dedup_check(package):
                 logger.warning("Konten terlalu mirip dengan yang sudah ada, dibuang")
+                finish_run(run_id, produced=0, errors=0)
                 return RunResult(success=False, reason="duplicate")
 
             # Tahap 7: Kirim ke Telegram & simpan ke DB
             content_id = self._dispatch(package)
+            produced = 1
             logger.info(f"Konten #{content_id} berhasil dikirim ke Telegram")
+            finish_run(run_id, produced=produced, errors=errors)
             return RunResult(success=True, content_id=content_id)
 
         except Exception as e:
+            errors = 1
             logger.error(f"Error dalam siklus produksi: {e}", exc_info=True)
+            finish_run(run_id, produced=produced, errors=errors)
             return RunResult(success=False, error=str(e))
 
     # ------------------------------------------------------------------
@@ -169,15 +180,20 @@ class Orchestrator:
 
     # ------------------------------------------------------------------
     # Tahap 5 — Dedup semantik
-    # [Implementasi penuh: Tahap 2 upgrade]
     # ------------------------------------------------------------------
     def _dedup_check(self, package: ContentPackage) -> bool:
         """
-        Cek kesamaan semantik vs konten 30 hari terakhir.
-        Stub: selalu lolos — embedding belum diimplementasi.
+        Cek kesamaan semantik konten JP vs konten 30 hari terakhir.
+        Menggunakan sentence-transformers + cosine similarity.
         """
-        logger.debug("[STUB] Dedup check dilewati (akan aktif di Tahap 2)")
-        return True
+        from database.dedup import is_duplicate
+        dedup_cfg = self.config["dedup"]
+        # Cek berdasarkan konten JP (representasi utama)
+        return not is_duplicate(
+            package.japanese,
+            lookback_days=dedup_cfg["lookback_days"],
+            threshold=dedup_cfg["similarity_threshold"],
+        )
 
     # ------------------------------------------------------------------
     # Tahap 6 — Dispatcher
@@ -185,18 +201,32 @@ class Orchestrator:
     # ------------------------------------------------------------------
     def _dispatch(self, package: ContentPackage) -> int:
         """
-        Format & kirim ke Telegram, catat ke DB.
-        Stub: simpan ke DB + log, belum kirim Telegram dengan format baru.
+        [Tahap 7] Format & kirim ke Telegram, simpan ke DB + embedding.
+        Stub sekarang: simpan ke DB lengkap + simpan embedding.
+        Telegram dispatch format baru aktif di Tahap 7.
         """
-        from database.db_manager import save_tweet, save_topic_used
-        tweet_db_id = save_tweet(package.japanese, package.topic)
-        save_topic_used(package.topic)
+        from database.db_manager import save_tweet_full, save_topic_used, update_tweet_sent
+        from database.dedup import check_and_save
 
-        logger.info(
-            f"[STUB] Konten #{tweet_db_id} disimpan "
-            f"(Telegram dispatch aktif di Tahap 7)"
+        # Simpan ke DB dengan semua metadata
+        tweet_id = save_tweet_full(
+            topic=package.topic,
+            content_jp=package.japanese,
+            content_indo=package.indonesian,
+            draft_jp=package.japanese,
+            score=package.score,
+            score_breakdown=package.score_breakdown,
+            angle_type=package.angle_type,
         )
-        logger.info(f"  [JP] {package.japanese}")
-        logger.info(f"  [ID] {package.indonesian}")
-        logger.info(f"  Skor: {package.score}/100")
-        return tweet_db_id
+
+        # Simpan embedding untuk dedup konten berikutnya
+        check_and_save(tweet_id, package.japanese)
+
+        # Catat ke memory
+        save_topic_used(package.topic, angle_type=package.angle_type)
+
+        logger.info("[STUB] Konten #%d tersimpan (Telegram dispatch aktif di Tahap 7)", tweet_id)
+        logger.info("  [JP] %s", package.japanese)
+        logger.info("  [ID] %s", package.indonesian)
+        logger.info("  Skor: %d/100 | Angle: %s", package.score, package.angle_type)
+        return tweet_id
