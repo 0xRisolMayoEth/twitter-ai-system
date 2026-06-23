@@ -1,10 +1,35 @@
+# Core AI / LLM
 openai>=1.0.0
+
+# Telegram bot
 python-telegram-bot>=20.0
-tweepy>=4.14.0
-pytrends>=4.9.2
-beautifulsoup4>=4.12.0
-requests>=2.31.0
-schedule>=1.2.0
-python-dotenv>=1.0.0
-aiohttp>=3.9.0
+
+# RSS & web
 feedparser>=6.0.10
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+aiohttp>=3.9.0
+
+# Trend sources
+pytrends>=4.9.2
+
+# Scheduling
+schedule>=1.2.0
+APScheduler>=3.10.0
+
+# Config & env
+python-dotenv>=1.0.0
+PyYAML>=6.0
+
+# Data models (Pydantic v2)
+pydantic>=2.0
+
+# Semantic dedup (ditambahkan Tahap 2)
+sentence-transformers>=2.7.0
+numpy>=1.26.0
+
+# Timezone
+pytz>=2024.1
+
+# X (Twitter) — opsional, tidak untuk auto-post
+tweepy>=4.14.0
