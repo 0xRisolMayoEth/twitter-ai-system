@@ -1,6 +1,13 @@
 .env
 *.db
 logs.txt
+logs/*.log
+logs/*.log.*
 __pycache__/
 *.pyc
 .DS_Store
+.pytest_cache/
+*.egg-info/
+dist/
+.venv/
+venv/

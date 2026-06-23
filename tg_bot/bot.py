@@ -1,52 +1,95 @@
-import sys, os, asyncio
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Application, CallbackQueryHandler, ContextTypes
+"""
+tg_bot/bot.py — Telegram bot utilities.
+
+Semua pengiriman ke Telegram dilakukan via requests (Telegram Bot API),
+bukan library python-telegram-bot, agar tidak ada dependency yang berat.
+
+Pipeline baru (Tahap 7+) menggunakan agents/dispatcher.py yang memanggil
+send_direct() di sini. Fungsi lama (approval flow) dipertahankan sebagai
+referensi tapi tidak dipakai dari pipeline utama.
+"""
+import html
+import os
+
+import requests
 from dotenv import load_dotenv
-from database.db_manager import update_tweet_status, get_tweet_by_id
+
 load_dotenv()
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+_TG_API = "https://api.telegram.org/bot{token}/{method}"
 
-async def send_tweet_for_approval(tweet_db_id, tweet_content, topic):
-    bot = Bot(token=BOT_TOKEN)
+
+def _post(method: str, payload: dict) -> dict:
+    """HTTP helper — panggil Telegram Bot API, kembalikan JSON respons."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    if not token:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN tidak di-set")
+    url = _TG_API.format(token=token, method=method)
+    resp = requests.post(url, json=payload, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def send_direct(text: str, parse_mode: str = "HTML") -> bool:
+    """
+    Kirim teks langsung ke chat tanpa tombol approve/reject.
+    Digunakan oleh dispatcher baru.
+    """
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+    if not chat_id:
+        print("⚠️  TELEGRAM_CHAT_ID tidak di-set, pesan tidak dikirim")
+        return False
+    try:
+        result = _post("sendMessage", {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": parse_mode,
+            "disable_web_page_preview": True,
+        })
+        return result.get("ok", False)
+    except Exception as e:
+        print(f"❌ Telegram send gagal: {e}")
+        return False
+
+
+def notify_simple(message: str) -> bool:
+    """Kirim notifikasi teks sederhana (untuk error/info sistem)."""
+    return send_direct(message, parse_mode="HTML")
+
+
+# ------------------------------------------------------------------
+# Legacy — dipertahankan untuk referensi, tidak dipakai dari pipeline baru
+# ------------------------------------------------------------------
+
+def send_tweet_for_approval(tweet_db_id: int, tweet_content: str, topic: str) -> None:
+    """
+    [LEGACY] Kirim tweet dengan tombol Approve/Reject.
+    Pipeline baru (Tahap 7) tidak memanggil fungsi ini — gunakan dispatcher.dispatch().
+    """
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+    if not chat_id:
+        return
+
+    content_safe = html.escape(tweet_content)
+    topic_safe   = html.escape(topic)
+
     message = (
-        f"🐦 *Tweet Baru untuk Review*\n\n"
-        f"📌 *Topik:* {topic}\n\n"
-        f"📝 *Draft:*\n`{tweet_content}`\n\n"
+        f"🐦 <b>Tweet Baru untuk Review</b>\n\n"
+        f"📌 <b>Topik:</b> {topic_safe}\n\n"
+        f"📝 <b>Draft:</b>\n<code>{content_safe}</code>\n\n"
         f"📊 Panjang: {len(tweet_content)}/280 karakter"
     )
-    keyboard = [[
-        InlineKeyboardButton("✅ Approve", callback_data=f"approve_{tweet_db_id}"),
-        InlineKeyboardButton("❌ Reject", callback_data=f"reject_{tweet_db_id}"),
-    ]]
-    await bot.send_message(chat_id=CHAT_ID, text=message,
-                           parse_mode="Markdown",
-                           reply_markup=InlineKeyboardMarkup(keyboard))
-    print(f"📨 Tweet #{tweet_db_id} dikirim ke Telegram!")
-
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    action, tweet_db_id = query.data.split("_", 1)
-    tweet_db_id = int(tweet_db_id)
-    tweet = get_tweet_by_id(tweet_db_id)
-    if action == "approve":
-        update_tweet_status(tweet_db_id, "approved")
-        from publisher.x_publisher import post_tweet
-        post_tweet(tweet["content"], tweet_db_id)
-        await query.edit_message_text(f"✅ *Tweet #{tweet_db_id} APPROVED & diposting!*", parse_mode="Markdown")
-    elif action == "reject":
-        update_tweet_status(tweet_db_id, "rejected")
-        await query.edit_message_text(f"❌ *Tweet #{tweet_db_id} REJECTED*", parse_mode="Markdown")
-
-def run_bot():
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CallbackQueryHandler(handle_callback))
-    print("🤖 Telegram bot berjalan...")
-    app.run_polling()
-
-async def notify_simple(message):
-    bot = Bot(token=BOT_TOKEN)
-    await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
+    keyboard = {"inline_keyboard": [[
+        {"text": "✅ Approve", "callback_data": f"approve_{tweet_db_id}"},
+        {"text": "❌ Reject",  "callback_data": f"reject_{tweet_db_id}"},
+    ]]}
+    try:
+        _post("sendMessage", {
+            "chat_id": chat_id,
+            "text": message,
+            "parse_mode": "HTML",
+            "reply_markup": keyboard,
+        })
+        print(f"📨 Tweet #{tweet_db_id} dikirim ke Telegram!")
+    except Exception as e:
+        print(f"❌ Telegram error: {e}")

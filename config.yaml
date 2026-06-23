@@ -1,0 +1,143 @@
+# =============================================================
+# Twitter AI System — Konfigurasi Utama
+# Ubah nilai di sini tanpa perlu menyentuh kode Python.
+# =============================================================
+
+# Niche & topik utama (gunakan bahasa natural, bisa Jepang atau Indonesia)
+niche: "berita & hal unik terbaru untuk audiens Jepang"
+
+# Register bahasa tweet: "casual" (futsū-form, sehari-hari) | "formal" (keigo)
+tweet_register: "casual"
+
+# Persona content creator
+persona:
+  name: "JP トレンドハンター"
+  description: >
+    Content creator Jepang yang selalu tahu tren terbaru sebelum orang lain.
+    Berwawasan luas, akrab, dan tidak pernah terlewat berita atau hal menarik.
+    Gaya bicara seperti ngobrol dengan teman — natural, kadang pakai ね/よ/けど,
+    sesekali w/笑. Bukan media berita, bukan korporat.
+
+# -----------------------------------------------------------
+# Scoring & quality control
+# -----------------------------------------------------------
+scoring:
+  threshold: 80        # skor minimum 0-100 untuk lolos ke Telegram
+  max_revisions: 5     # maksimal loop Critic ⇄ Reviser
+  # Bobot per aspek (total harus = 100)
+  weights:
+    hook: 25           # kekuatan hook / kalimat pembuka
+    engagement: 20     # potensi engagement & shareability
+    naturalness: 20    # terlihat natural, bukan AI
+    japanese_quality: 15  # kealamian bahasa Jepang (futsū-form)
+    relevance: 10      # relevansi & kesegaran untuk audiens JP
+    format: 10         # panjang, hashtag, emoji
+
+# -----------------------------------------------------------
+# Dedup semantik
+# -----------------------------------------------------------
+dedup:
+  similarity_threshold: 0.85  # cosine similarity — di atas ini = duplikat
+  lookback_days: 30           # cek konten berapa hari ke belakang
+  model: "paraphrase-multilingual-MiniLM-L12-v2"  # model sentence-transformers
+
+# -----------------------------------------------------------
+# Scheduling (zona waktu JST / Asia/Tokyo)
+# -----------------------------------------------------------
+scheduling:
+  daily_target: 20          # konten per hari
+  active_hours_jst:
+    start: 7                # mulai jam 07:00 JST
+    end: 24                 # sampai jam 00:00 JST (tengah malam)
+  jitter_minutes: 10        # jitter acak ±N menit agar tidak robotik
+
+# -----------------------------------------------------------
+# Sumber RSS (tambah/kurangi sesuai kebutuhan)
+# -----------------------------------------------------------
+rss_sources:
+  # --- Sumber Jepang ---
+  - url: "https://www3.nhk.or.jp/rss/news/cat0.xml"
+    name: "NHK News General"
+    language: "ja"
+  - url: "https://www3.nhk.or.jp/rss/news/cat3.xml"
+    name: "NHK Science & Culture"
+    language: "ja"
+  - url: "https://gigazine.net/news/rss_2.0/"
+    name: "Gigazine"
+    language: "ja"
+  - url: "https://rss.itmedia.co.jp/rss/2.0/itmedia_all.xml"
+    name: "ITmedia"
+    language: "ja"
+  - url: "https://feed.game.watch.impress.co.jp/data/news.rss"
+    name: "Game Watch"
+    language: "ja"
+  - url: "https://ascii.jp/rss.xml"
+    name: "ASCII.jp"
+    language: "ja"
+  # --- Sumber global (konten diterjemahkan untuk audiens JP) ---
+  - url: "https://www.animenewsnetwork.com/all/rss.xml"
+    name: "Anime News Network"
+    language: "en"
+  - url: "https://news.ycombinator.com/rss"
+    name: "Hacker News"
+    language: "en"
+  - url: "https://www.theverge.com/rss/index.xml"
+    name: "The Verge"
+    language: "en"
+
+# -----------------------------------------------------------
+# Trend scouting settings
+# -----------------------------------------------------------
+trend_scout:
+  max_age_hours: 48    # buang topik lebih tua dari ini
+  max_per_feed: 5      # maksimal entry per feed RSS
+  max_candidates: 20   # jumlah kandidat yang dikembalikan ke pipeline
+
+# Topik fallback jika semua sumber RSS gagal
+fallback_topics:
+  - "AI技術の最新動向"
+  - "日本のゲーム新作情報"
+  - "アニメ新シーズン注目作品"
+  - "SNSで話題のトレンド"
+  - "テクノロジースタートアップ最新情報"
+  - "VTuber界隈の最新ニュース"
+  - "インターネットミームと流行"
+  - "スマートフォン最新情報"
+
+# -----------------------------------------------------------
+# Google Trends Japan (via pytrends)
+# -----------------------------------------------------------
+google_trends:
+  enabled: false      # set true jika pytrends berjalan di VPS
+  geo: "JP"
+  timeframe: "now 1-d"
+  keywords:
+    - "ゲーム"
+    - "アニメ"
+    - "AI"
+    - "テクノロジー"
+    - "エンタメ"
+    - "バズ"
+
+# -----------------------------------------------------------
+# LLM
+# -----------------------------------------------------------
+llm:
+  timeout: 60          # detik
+  max_retries: 3
+  retry_base_delay: 2  # detik awal exponential backoff
+
+# -----------------------------------------------------------
+# Telegram
+# -----------------------------------------------------------
+telegram:
+  rate_limit_seconds: 2  # jeda minimum antar pesan
+
+# -----------------------------------------------------------
+# Logging
+# -----------------------------------------------------------
+logging:
+  level: "INFO"
+  file: "logs/app.log"
+  max_bytes: 5242880   # 5 MB
+  backup_count: 5

@@ -1,0 +1,353 @@
+"""
+tests/test_reviser.py — Unit test untuk agents/reviser.py
+
+LLM di-mock agar test cepat dan tidak butuh API key.
+"""
+import json
+import unittest
+from unittest import mock
+
+from core.models import CriticResult, TweetDraft
+
+_CFG = {
+    "niche": "AI & tech",
+    "persona": {"name": "TestBot", "description": "Bot untuk testing"},
+    "tweet_register": "casual",
+    "scoring": {"weights": {
+        "hook": 25, "engagement": 20, "naturalness": 20,
+        "japanese_quality": 15, "relevance": 10, "format": 10,
+    }},
+}
+
+
+def _make_draft(jp="元のツイートです。", indo="Tweet asli Indonesia."):
+    return TweetDraft(
+        japanese=jp,
+        indonesian=indo,
+        topic="AIニュース",
+        angle_type="curiosity_gap",
+        source_url="http://example.com",
+    )
+
+
+def _make_critic(score=65, issues=None, suggestions=None):
+    return CriticResult(
+        score=score,
+        breakdown={"hook": 12, "engagement": 13, "naturalness": 14,
+                   "japanese_quality": 10, "relevance": 8, "format": 8},
+        issues=issues or ["Hook kurang menarik", "Terlalu formal"],
+        suggestions=suggestions or ["Mulai dengan pertanyaan", "Pakai kata netizen"],
+    )
+
+
+def _llm_response(jp="改善したツイートです！", indo="Tweet yang sudah diperbaiki!"):
+    return json.dumps({"japanese": jp, "indonesian": indo})
+
+
+class TestParse(unittest.TestCase):
+    def test_valid_response_parsed(self):
+        from agents.reviser import _parse
+        original = _make_draft()
+        raw = _llm_response("新しいツイート", "Tweet baru")
+        result = _parse(raw, original)
+        self.assertEqual(result.japanese, "新しいツイート")
+        self.assertEqual(result.indonesian, "Tweet baru")
+
+    def test_json_embedded_in_text(self):
+        from agents.reviser import _parse
+        original = _make_draft()
+        raw = 'Hasil revisi:\n{"japanese": "改善", "indonesian": "Revisi"}\nSelesai.'
+        result = _parse(raw, original)
+        self.assertEqual(result.japanese, "改善")
+
+    def test_empty_japanese_returns_original(self):
+        from agents.reviser import _parse
+        original = _make_draft(jp="元のツイート")
+        raw = json.dumps({"japanese": "", "indonesian": "Indo"})
+        result = _parse(raw, original)
+        self.assertEqual(result.japanese, "元のツイート")
+
+    def test_jp_truncated_at_140(self):
+        from agents.reviser import _parse, JP_MAX
+        original = _make_draft()
+        long_jp = "あ" * 200
+        raw = _llm_response(jp=long_jp)
+        result = _parse(raw, original)
+        self.assertLessEqual(len(result.japanese), JP_MAX)
+
+    def test_indo_truncated_at_280(self):
+        from agents.reviser import _parse, ID_MAX
+        original = _make_draft()
+        long_indo = "a" * 400
+        raw = _llm_response(indo=long_indo)
+        result = _parse(raw, original)
+        self.assertLessEqual(len(result.indonesian), ID_MAX)
+
+    def test_empty_indonesian_falls_back_to_original_indo(self):
+        from agents.reviser import _parse
+        original = _make_draft(indo="Fallback Indonesia")
+        raw = json.dumps({"japanese": "日本語", "indonesian": ""})
+        result = _parse(raw, original)
+        self.assertEqual(result.indonesian, "Fallback Indonesia")
+
+    def test_invalid_json_returns_original(self):
+        from agents.reviser import _parse
+        original = _make_draft(jp="オリジナル")
+        result = _parse("bukan json", original)
+        self.assertEqual(result.japanese, "オリジナル")
+
+    def test_topic_and_angle_preserved(self):
+        from agents.reviser import _parse
+        original = _make_draft()
+        raw = _llm_response("改善版", "Perbaikan")
+        result = _parse(raw, original)
+        self.assertEqual(result.topic, original.topic)
+        self.assertEqual(result.angle_type, original.angle_type)
+        self.assertEqual(result.source_url, original.source_url)
+
+
+class TestRevise(unittest.TestCase):
+    """Test revise() end-to-end dengan LLM mock."""
+
+    def test_successful_revision(self):
+        from agents.reviser import revise
+        draft = _make_draft()
+        critic = _make_critic()
+
+        with mock.patch("agents.reviser.load_config", return_value=_CFG), \
+             mock.patch("agents.reviser.chat", return_value=_llm_response("改善されたツイート！", "Sudah diperbaiki!")):
+            result = revise(draft, critic)
+
+        self.assertEqual(result.japanese, "改善されたツイート！")
+        self.assertEqual(result.indonesian, "Sudah diperbaiki!")
+
+    def test_llm_error_returns_original(self):
+        from agents.reviser import revise
+        draft = _make_draft(jp="元のツイート変わらず")
+        critic = _make_critic()
+
+        with mock.patch("agents.reviser.load_config", return_value=_CFG), \
+             mock.patch("agents.reviser.chat", side_effect=Exception("timeout")):
+            result = revise(draft, critic)
+
+        self.assertEqual(result.japanese, "元のツイート変わらず")
+
+    def test_prompt_contains_issues(self):
+        from agents.reviser import revise
+        draft = _make_draft()
+        critic = _make_critic(issues=["Hook sangat lemah", "Terlalu panjang"])
+        captured = []
+
+        def fake_chat(messages, **kwargs):
+            captured.extend(messages)
+            return _llm_response()
+
+        with mock.patch("agents.reviser.load_config", return_value=_CFG), \
+             mock.patch("agents.reviser.chat", side_effect=fake_chat):
+            revise(draft, critic)
+
+        all_content = " ".join(m.get("content", "") for m in captured)
+        self.assertIn("Hook sangat lemah", all_content)
+        self.assertIn("Terlalu panjang", all_content)
+
+    def test_prompt_contains_suggestions(self):
+        from agents.reviser import revise
+        draft = _make_draft()
+        critic = _make_critic(suggestions=["Mulai dengan angka", "Tambahkan emoji satu"])
+        captured = []
+
+        def fake_chat(messages, **kwargs):
+            captured.extend(messages)
+            return _llm_response()
+
+        with mock.patch("agents.reviser.load_config", return_value=_CFG), \
+             mock.patch("agents.reviser.chat", side_effect=fake_chat):
+            revise(draft, critic)
+
+        all_content = " ".join(m.get("content", "") for m in captured)
+        self.assertIn("Mulai dengan angka", all_content)
+
+    def test_prompt_contains_original_tweet(self):
+        from agents.reviser import revise
+        draft = _make_draft(jp="これがオリジナル")
+        critic = _make_critic()
+        captured = []
+
+        def fake_chat(messages, **kwargs):
+            captured.extend(messages)
+            return _llm_response()
+
+        with mock.patch("agents.reviser.load_config", return_value=_CFG), \
+             mock.patch("agents.reviser.chat", side_effect=fake_chat):
+            revise(draft, critic)
+
+        all_content = " ".join(m.get("content", "") for m in captured)
+        self.assertIn("これがオリジナル", all_content)
+
+    def test_revised_jp_within_140(self):
+        from agents.reviser import revise, JP_MAX
+        draft = _make_draft()
+        critic = _make_critic()
+
+        with mock.patch("agents.reviser.load_config", return_value=_CFG), \
+             mock.patch("agents.reviser.chat", return_value=_llm_response(jp="い" * 150)):
+            result = revise(draft, critic)
+
+        self.assertLessEqual(len(result.japanese), JP_MAX)
+
+
+class TestBuildPrompt(unittest.TestCase):
+    def test_prompt_contains_score(self):
+        from agents.reviser import _build_prompt
+        draft = _make_draft()
+        critic = _make_critic(score=72)
+        with mock.patch("agents.reviser.load_config", return_value=_CFG):
+            prompt = _build_prompt(draft, critic, {}, "casual")
+        self.assertIn("72", prompt)
+
+    def test_prompt_contains_topic(self):
+        from agents.reviser import _build_prompt
+        draft = _make_draft()
+        critic = _make_critic()
+        with mock.patch("agents.reviser.load_config", return_value=_CFG):
+            prompt = _build_prompt(draft, critic, {}, "casual")
+        self.assertIn("AIニュース", prompt)
+
+    def test_formal_register_uses_keigo(self):
+        from agents.reviser import _build_prompt
+        draft = _make_draft()
+        critic = _make_critic()
+        with mock.patch("agents.reviser.load_config", return_value=_CFG):
+            prompt = _build_prompt(draft, critic, {}, "formal")
+        self.assertIn("keigo", prompt)
+
+    def test_weak_aspects_highlighted(self):
+        """Aspek dengan skor < 70% dari maks harus muncul sebagai 'lemah'."""
+        from agents.reviser import _build_prompt
+        draft = _make_draft()
+        # Hook sangat rendah (5/25 = 20%)
+        critic = CriticResult(
+            score=50,
+            breakdown={"hook": 5, "engagement": 10, "naturalness": 10,
+                       "japanese_quality": 8, "relevance": 9, "format": 8},
+            issues=[], suggestions=[],
+        )
+        with mock.patch("agents.reviser.load_config", return_value=_CFG):
+            prompt = _build_prompt(draft, critic, {}, "casual")
+        self.assertIn("hook", prompt)
+
+
+class TestOrchestratorLoop(unittest.TestCase):
+    """Test integrasi loop Critic⇄Reviser di orchestrator."""
+
+    def _make_draft(self):
+        return TweetDraft(
+            japanese="ループテストツイート",
+            indonesian="Tweet test loop",
+            topic="Test",
+            angle_type="news_insight",
+        )
+
+    def test_loop_stops_at_threshold(self):
+        """Jika skor ≥ threshold pada iterasi pertama, tidak ada revisi."""
+        from orchestrator import Orchestrator
+
+        orch = Orchestrator.__new__(Orchestrator)
+        orch.config = {"scoring": {"threshold": 80, "max_revisions": 5}}
+        orch.threshold = 80
+        orch.max_revisions = 5
+
+        mock_critic = CriticResult(
+            score=85, breakdown={}, issues=[], suggestions=[]
+        )
+
+        with mock.patch("agents.critic_v2.review", return_value=mock_critic), \
+             mock.patch("agents.reviser.revise") as mock_revise:
+            pkg = orch._critic_revise_loop(self._make_draft())
+
+        mock_revise.assert_not_called()
+        self.assertEqual(pkg.score, 85)
+        self.assertEqual(pkg.revision_count, 0)
+        self.assertFalse(pkg.below_threshold)
+
+    def test_loop_revises_when_below_threshold(self):
+        """Jika skor < threshold, reviser dipanggil."""
+        from orchestrator import Orchestrator
+
+        orch = Orchestrator.__new__(Orchestrator)
+        orch.config = {"scoring": {"threshold": 80, "max_revisions": 5}}
+        orch.threshold = 80
+        orch.max_revisions = 5
+
+        # Skor pertama rendah, skor kedua tinggi
+        low_critic  = CriticResult(score=60, breakdown={}, issues=["Masalah"], suggestions=["Saran"])
+        high_critic = CriticResult(score=90, breakdown={}, issues=[], suggestions=[])
+
+        call_n = [0]
+        def fake_review(draft):
+            call_n[0] += 1
+            return low_critic if call_n[0] == 1 else high_critic
+
+        revised_draft = TweetDraft(
+            japanese="改善ツイート", indonesian="Revisi",
+            topic="Test", angle_type="news_insight",
+        )
+
+        with mock.patch("agents.critic_v2.review", side_effect=fake_review), \
+             mock.patch("agents.reviser.revise", return_value=revised_draft):
+            pkg = orch._critic_revise_loop(self._make_draft())
+
+        self.assertEqual(pkg.score, 90)
+        self.assertEqual(pkg.revision_count, 1)
+        self.assertFalse(pkg.below_threshold)
+
+    def test_loop_tracks_best_score(self):
+        """Loop harus menyimpan draft dengan skor tertinggi (bukan hanya terakhir)."""
+        from orchestrator import Orchestrator
+
+        orch = Orchestrator.__new__(Orchestrator)
+        orch.config = {"scoring": {"threshold": 80, "max_revisions": 3}}
+        orch.threshold = 80
+        orch.max_revisions = 3
+
+        scores = [70, 85, 60, 55]  # membaik lalu memburuk
+        idx = [0]
+
+        def fake_review(draft):
+            s = scores[min(idx[0], len(scores) - 1)]
+            idx[0] += 1
+            return CriticResult(score=s, breakdown={}, issues=["X"], suggestions=["Y"])
+
+        def fake_revise(draft, critic):
+            return TweetDraft(japanese=f"revisi_{idx[0]}", indonesian="",
+                              topic="T", angle_type="news_insight")
+
+        with mock.patch("agents.critic_v2.review", side_effect=fake_review), \
+             mock.patch("agents.reviser.revise", side_effect=fake_revise):
+            pkg = orch._critic_revise_loop(self._make_draft())
+
+        # Skor terbaik adalah 85 (iterasi ke-2)
+        self.assertEqual(pkg.score, 85)
+
+    def test_loop_marks_below_threshold_after_max_revisions(self):
+        """Jika skor selalu di bawah threshold setelah maks revisi → below_threshold=True."""
+        from orchestrator import Orchestrator
+
+        orch = Orchestrator.__new__(Orchestrator)
+        orch.config = {"scoring": {"threshold": 80, "max_revisions": 2}}
+        orch.threshold = 80
+        orch.max_revisions = 2
+
+        low_critic = CriticResult(score=55, breakdown={}, issues=["X"], suggestions=["Y"])
+        draft_v = TweetDraft(japanese="v", indonesian="", topic="T", angle_type="n")
+
+        with mock.patch("agents.critic_v2.review", return_value=low_critic), \
+             mock.patch("agents.reviser.revise", return_value=draft_v):
+            pkg = orch._critic_revise_loop(self._make_draft())
+
+        self.assertEqual(pkg.below_threshold, True)
+        self.assertEqual(pkg.revision_count, 2)
+
+
+if __name__ == "__main__":
+    unittest.main()
