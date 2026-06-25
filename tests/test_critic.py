@@ -51,12 +51,17 @@ def _llm_response(breakdown=None, issues=None, suggestions=None):
 
 
 class TestFallback(unittest.TestCase):
-    def test_fallback_score_is_roughly_75_percent(self):
+    def test_fallback_score_is_zero(self):
+        """Fallback sekarang skor 0 (bukan 73) agar konten tidak ikut terkirim."""
         from agents.critic_v2 import _fallback
         result = _fallback(_WEIGHTS)
-        # int(w * 0.75) tiap aspek lalu dijumlah — hasilnya ~73 karena truncation
-        expected = sum(int(v * 0.75) for v in _WEIGHTS.values())
-        self.assertEqual(result.score, expected)
+        self.assertEqual(result.score, 0)
+
+    def test_fallback_marked_and_rejected(self):
+        from agents.critic_v2 import _fallback
+        result = _fallback(_WEIGHTS)
+        self.assertTrue(result.is_fallback)
+        self.assertEqual(result.verdict, "REJECT")
 
     def test_fallback_has_all_aspects(self):
         from agents.critic_v2 import _fallback
@@ -115,8 +120,8 @@ class TestParse(unittest.TestCase):
         from agents.critic_v2 import _parse
         result = _parse("ini bukan json", _WEIGHTS)
         self.assertIsInstance(result, CriticResult)
-        expected = sum(int(v * 0.75) for v in _WEIGHTS.values())
-        self.assertEqual(result.score, expected)
+        self.assertEqual(result.score, 0)
+        self.assertTrue(result.is_fallback)
 
     def test_missing_aspects_default_to_zero(self):
         """Jika LLM hanya kasih sebagian aspek, sisanya 0."""
@@ -158,8 +163,8 @@ class TestReview(unittest.TestCase):
             result = review(draft)
 
         self.assertIsInstance(result, CriticResult)
-        expected = sum(int(v * 0.75) for v in _WEIGHTS.values())
-        self.assertEqual(result.score, expected)
+        self.assertEqual(result.score, 0)
+        self.assertTrue(result.is_fallback)
 
     def test_high_quality_tweet_gets_high_score(self):
         from agents.critic_v2 import review

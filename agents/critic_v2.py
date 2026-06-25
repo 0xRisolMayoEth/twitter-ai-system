@@ -41,6 +41,17 @@ _ASPECT_DESC: Dict[str, str] = {
 }
 
 
+def _verdict(score: int) -> str:
+    """Petakan skor 0-100 ke verdict. Dipakai untuk tag Telegram & alur revisi."""
+    if score >= 90:
+        return "APPROVED"   # ✅ luar biasa
+    if score >= 75:
+        return "GOOD"       # ⚡ bagus, layak kirim
+    if score >= 60:
+        return "REVISE"     # ✏️ perlu perbaikan
+    return "REJECT"         # ✗ tolak, ganti topik
+
+
 def review(draft: TweetDraft) -> CriticResult:
     """Evaluasi TweetDraft dan kembalikan CriticResult (skor 0-100)."""
     cfg = load_config()
@@ -98,12 +109,21 @@ Panjang: {len(draft.japanese)} karakter (maks 140)
 === ASPEK PENILAIAN ===
 {aspects_str}
 
-=== INSTRUKSI ===
+=== INSTRUKSI PENILAIAN (BERSIKAP KETAT) ===
 Beri skor per aspek sesuai maksimum masing-masing (BUKAN skala 0-10).
 "hook" maks 25, "engagement" maks 20, dst.
-Jika tweet BURUK di aspek tertentu, beri skor rendah — jangan terlalu baik hati.
 
-Identifikasi masalah konkret (1-3 masalah utama) dan saran spesifik (1-3 saran).
+Patokan ketat — JANGAN menggerombol di skor tengah:
+• Jika hook hanya menyalin/menerjemahkan judul berita → hook MAKS 8 dari 25.
+• Jika tweet tidak punya opini/reaksi/insight (cuma menyampaikan fakta)
+  → naturalness & engagement MASING-MASING maks setengah.
+• Jika nada terdengar seperti koran/korporat (「発表された」「非常に」)
+  → japanese_quality & naturalness dipotong drastis.
+• Tweet yang benar-benar berkarakter & memancing reaksi BOLEH dapat 90+.
+Gunakan SELURUH rentang 0-100. Bedakan tweet biasa (60-an) dari yang bagus (80+).
+
+Identifikasi 1-3 masalah konkret dan 1-3 saran SPESIFIK & actionable
+(sebut bagian mana & harus diubah jadi apa — bukan "buat lebih menarik").
 
 Balas HANYA JSON valid:
 {{
@@ -115,8 +135,8 @@ Balas HANYA JSON valid:
     "relevance": <0-10>,
     "format": <0-10>
   }},
-  "issues": ["masalah 1", "masalah 2"],
-  "suggestions": ["saran 1", "saran 2"]
+  "issues": ["masalah konkret 1", "masalah konkret 2"],
+  "suggestions": ["saran spesifik 1", "saran spesifik 2"]
 }}"""
 
 
@@ -156,6 +176,7 @@ def _parse(raw: str, weights: Dict[str, int]) -> CriticResult:
 
         return CriticResult(
             score=total,
+            verdict=_verdict(total),
             breakdown=breakdown,
             issues=issues[:5],
             suggestions=suggestions[:5],
@@ -171,11 +192,17 @@ def _parse(raw: str, weights: Dict[str, int]) -> CriticResult:
 # ------------------------------------------------------------------
 
 def _fallback(weights: Dict[str, int]) -> CriticResult:
-    """Skor fallback konservatif (75%) agar pipeline tidak berhenti."""
-    breakdown = {k: int(v * 0.75) for k, v in weights.items()}
+    """
+    Hasil fallback saat LLM gagal. Skor 0 + is_fallback=True agar
+    orchestrator memperlakukannya sebagai kegagalan (skip), BUKAN konten
+    layak kirim. (Dulu mengembalikan 73 sehingga sampah ikut terkirim.)
+    """
+    logger.error("Critic FALLBACK aktif — LLM tidak menghasilkan penilaian. Konten akan di-skip.")
     return CriticResult(
-        score=sum(breakdown.values()),
-        breakdown=breakdown,
+        score=0,
+        verdict="REJECT",
+        breakdown={k: 0 for k in weights},
         issues=["Tidak dapat mengevaluasi (LLM tidak tersedia)"],
-        suggestions=["Periksa koneksi LLM"],
+        suggestions=["Periksa LLM_API_KEY / LLM_BASE_URL / LLM_MODEL di .env"],
+        is_fallback=True,
     )

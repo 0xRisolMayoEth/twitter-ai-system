@@ -16,6 +16,7 @@ def _make_package(
     angle="news_insight",
     below=False,
     url="http://example.com/article",
+    verdict="GOOD",
 ):
     return ContentPackage(
         topic="AI最新情報",
@@ -24,6 +25,7 @@ def _make_package(
         japanese=jp,
         indonesian=indo,
         score=score,
+        verdict=verdict,
         score_breakdown={"hook": 20, "engagement": 16},
         below_threshold=below,
         revision_count=1,
@@ -73,20 +75,30 @@ class TestFormatMessage(unittest.TestCase):
             msg = format_message(pkg)
         self.assertNotIn("Sumber berita", msg)
 
-    def test_below_threshold_warning_shown(self):
+    def test_approved_verdict_tag_shown(self):
         from agents.dispatcher import format_message
-        pkg = _make_package(score=65, below=True)
-        with mock.patch("agents.dispatcher.load_config", return_value={"scoring": {"threshold": 80}}):
+        pkg = _make_package(score=95, verdict="APPROVED")
+        with mock.patch("agents.dispatcher.load_config", return_value={"scoring": {"threshold": 75}}):
             msg = format_message(pkg)
-        self.assertIn("⚠️", msg)
-        self.assertIn("threshold", msg)
+        self.assertIn("✅", msg)
+        self.assertIn("APPROVED", msg)
 
-    def test_no_warning_when_above_threshold(self):
+    def test_good_verdict_tag_shown(self):
         from agents.dispatcher import format_message
-        pkg = _make_package(score=90, below=False)
-        with mock.patch("agents.dispatcher.load_config", return_value={"scoring": {"threshold": 80}}):
+        pkg = _make_package(score=80, verdict="GOOD")
+        with mock.patch("agents.dispatcher.load_config", return_value={"scoring": {"threshold": 75}}):
+            msg = format_message(pkg)
+        self.assertIn("⚡", msg)
+        self.assertIn("GOOD", msg)
+
+    def test_no_below_threshold_warning_ever(self):
+        """Warning 'di bawah threshold' sudah dihapus — konten buruk tak dikirim."""
+        from agents.dispatcher import format_message
+        pkg = _make_package(score=90, verdict="APPROVED")
+        with mock.patch("agents.dispatcher.load_config", return_value={"scoring": {"threshold": 75}}):
             msg = format_message(pkg)
         self.assertNotIn("⚠️", msg)
+        self.assertNotIn("di bawah threshold", msg)
 
     def test_html_special_chars_escaped(self):
         """Karakter HTML dalam tweet harus di-escape agar tidak merusak parse mode."""

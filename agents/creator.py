@@ -94,39 +94,61 @@ def _build_prompt(
     return f"""Kamu adalah {persona_name}.
 {persona_desc}
 
-Buat tweet tentang:
+Kamu BARU SAJA membaca berita di bawah dan ingin membagikan PENDAPATMU ke followers.
+Tulis seperti kamu sendiri yang ngetik di X — bukan menyalin judul berita, bukan
+menerjemahkan headline. Kamu punya opini, reaksi, dan sudut pandang.
 
+BERITA YANG KAMU BACA:
 TOPIK  : {strategy.topic}
 ANGLE  : {strategy.angle_type} — {strategy.angle_description}
 NICHE  : {niche}
 SUMBER : {strategy.source_url or '(tidak ada)'}
 
+=== TUGAS ===
+Buat 1 tweet Jepang + 1 tweet Indonesia. Keduanya harus terasa ditulis MANUSIA
+yang punya reaksi pribadi terhadap berita ini, bukan akun bot berita.
+
 === ATURAN TWEET JEPANG ===
 • Register  : {jp_register}
-• Panjang   : WAJIB ≤ {JP_MAX} karakter (hitung cermat, tiap karakter JP = 1)
-• Hook      : Kalimat pertama HARUS menarik dan menghentikan scroll
-• Emoji     : 0–1 (jangan berlebihan, hanya jika benar-benar pas)
-• Hashtag   : 0–2 yang relevan (atau tidak ada sama sekali)
-• HINDARI   : kalimat terlalu rapi/korporat, hype kosong ("game changer!"),
-              pola template berulang, pembuka klise yang sama tiap tweet
+• Panjang   : WAJIB ≤ {JP_MAX} karakter (idealnya 60–130; tiap karakter JP = 1)
+• Hook      : Kalimat PERTAMA harus menghentikan scroll. BUKAN judul berita.
+• Sudut     : WAJIB ada reaksi/opini/insight — bukan sekadar "X が発表された".
+• Emoji     : 0–2, hanya jika memperkuat emosi (🤔🔥😳 dll)
+• Hashtag   : 0–1, hanya jika benar-benar relevan
+
+=== VARIASIKAN FORMAT (pilih yang paling pas, jangan selalu sama) ===
+1. Hot take / opini kontroversial : 「正直、これは○○だと思う」
+2. Pertanyaan retoris             : 「これ、もう○○じゃない？」
+3. Did-you-know                   : 「みんな知ってた？実は…」
+4. Reaksi personal                : 「待って、これマジ？」「鳥肌立った」
+5. Mini-insight (kenapa ini penting): fakta + "つまり○○ということ"
+
+=== DILARANG KERAS ===
+✗ Menyalin/menerjemahkan judul berita mentah
+✗ Format "Info terbaru: …" atau "～が発表されました"
+✗ Nada korporat/koran ("非常に興味深い", "正式に発表")
+✗ Hype kosong tanpa isi ("game changer!", "やばすぎ" tanpa alasan)
+
+=== CONTOH BURUK → BAGUS ===
+✗ 「OpenAIついに独自AIチップ開発 ChatGPT支える」
+✓ 「OpenAIが自社チップ作るって、もうGPUメーカー終わりじゃない？🤔
+   Googleに続いてOpenAIまで…半導体業界、激変すぎる」
+
+✗ 「新型AIモデルが正式に発表されました」
+✓ 「正直に言う。これが本当なら、速度もコストも依存度も全部変わる。
+   AIの転換点かもしれない🔥」
 
 === ATURAN TWEET INDONESIA ===
 • Panjang   : ≤ {ID_MAX} karakter
 • Gaya      : Santai-cerdas, mengalir, seperti ngobrol di Twitter
-• JANGAN    : terjemahkan kata-per-kata dari JP — buat versi sendiri dengan nada natural
-
-=== CONTOH GAYA JEPANG YANG BAIK ===
-❌ 非常に興味深い最新情報が公開されました
-✅ これ、知らなかった人多そう...
-
-❌ 公式から正式に発表されました
-✅ ついに来た、みんな見て
+• Sudut     : Sampaikan opini/reaksi yang SAMA semangatnya dengan versi JP
+• JANGAN    : terjemahan kata-per-kata, dan JANGAN mulai dengan "Info terbaru:"
 
 === OUTPUT ===
 Balas HANYA JSON valid, tanpa teks lain:
 {{
-  "japanese": "ここに日本語ツイートを書く (≤{JP_MAX}文字)",
-  "indonesian": "Tulis tweet Indonesia di sini"
+  "japanese": "ここに日本語ツイートを書く (≤{JP_MAX}文字、フックで始める)",
+  "indonesian": "Tulis tweet Indonesia dengan opini/reaksi, bukan terjemahan"
 }}"""
 
 
@@ -198,7 +220,11 @@ def _parse(
 # ------------------------------------------------------------------
 
 def _fallback(strategy: StrategistOutput) -> TweetDraft:
-    """Draft minimal jika LLM gagal total (tidak pernah None)."""
+    """
+    Draft darurat jika LLM gagal total. Ditandai is_fallback=True agar
+    orchestrator TIDAK mengirimnya ke Telegram (lebih baik skip daripada
+    kirim konten mentah berkualitas rendah).
+    """
     jp = f"【{strategy.topic}】"
     if len(jp) > JP_MAX:
         jp = jp[:JP_MAX]
@@ -208,4 +234,5 @@ def _fallback(strategy: StrategistOutput) -> TweetDraft:
         topic=strategy.topic,
         angle_type=strategy.angle_type,
         source_url=strategy.source_url,
+        is_fallback=True,
     )

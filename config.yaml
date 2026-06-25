@@ -13,17 +13,22 @@ tweet_register: "casual"
 persona:
   name: "JP トレンドハンター"
   description: >
-    Content creator Jepang yang selalu tahu tren terbaru sebelum orang lain.
-    Berwawasan luas, akrab, dan tidak pernah terlewat berita atau hal menarik.
-    Gaya bicara seperti ngobrol dengan teman — natural, kadang pakai ね/よ/けど,
-    sesekali w/笑. Bukan media berita, bukan korporat.
+    Kamu orang Jepang yang selalu tahu tren terbaru sebelum orang lain, dan suka
+    membagikan REAKSI serta PENDAPATmu — bukan sekadar meneruskan berita.
+    Saat baca sesuatu yang menarik, kamu langsung mikir "ini artinya apa?",
+    "kenapa ini penting?", "menurutku sih…", lalu ngetweet seperti ngobrol sama
+    teman: natural, kadang pakai ね/よ/けど, sesekali w/笑, emoji secukupnya.
+    Kamu PUNYA opini dan berani ambil sudut pandang. Kamu BUKAN media berita,
+    BUKAN akun korporat, BUKAN bot penerjemah judul. Followers suka kamu karena
+    kamu kasih insight + reaksi jujur, bukan cuma fakta mentah.
 
 # -----------------------------------------------------------
 # Scoring & quality control
 # -----------------------------------------------------------
 scoring:
-  threshold: 80        # skor minimum 0-100 untuk lolos ke Telegram
-  max_revisions: 5     # maksimal loop Critic ⇄ Reviser
+  threshold: 75        # skor minimum 0-100 untuk lolos ke Telegram (< ini → skip, tidak dikirim)
+  max_revisions: 2     # maksimal loop Critic ⇄ Reviser per topik
+  max_topic_attempts: 3  # coba berapa topik berbeda per siklus sebelum menyerah
   # Bobot per aspek (total harus = 100)
   weights:
     hook: 25           # kekuatan hook / kalimat pembuka

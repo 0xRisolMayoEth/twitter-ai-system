@@ -3,7 +3,8 @@ main.py — Entry point sistem Twitter AI multi-agent.
 
 Cara jalan:
     python main.py --schedule       # scheduler baru (JST, 20/hari, jitter) ← RECOMMENDED
-    python main.py --orchestrator   # satu siklus orchestrator (dev/test)
+    python main.py --test-once      # satu siklus orchestrator untuk lihat output (dev/test)
+    python main.py --orchestrator   # sama dengan --test-once
     python main.py --once           # satu siklus pipeline lama (legacy)
     python main.py --bot            # Telegram bot polling saja (legacy)
     python main.py                  # mode default: bot + scheduler lama (legacy)
@@ -52,8 +53,9 @@ def main():
         ContentScheduler().start()
         return
 
-    # --- Mode: jalankan orchestrator baru satu siklus (untuk dev/test) ---
-    if "--orchestrator" in args:
+    # --- Mode: test satu siklus orchestrator (alias --orchestrator) ---
+    #     Aman dijalankan manual; tidak menyentuh scheduler.
+    if "--orchestrator" in args or "--test-once" in args:
         if not _check_env():
             sys.exit(1)
         from orchestrator import Orchestrator

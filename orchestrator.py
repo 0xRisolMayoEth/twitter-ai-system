@@ -33,6 +33,8 @@ class Orchestrator:
         self.config = load_config()
         self.threshold = self.config["scoring"]["threshold"]
         self.max_revisions = self.config["scoring"]["max_revisions"]
+        # Berapa banyak topik berbeda yang dicoba per siklus sebelum menyerah
+        self.max_topic_attempts = self.config["scoring"].get("max_topic_attempts", 3)
 
     # ------------------------------------------------------------------
     # Entry point
@@ -40,72 +42,99 @@ class Orchestrator:
     def run_cycle(self) -> RunResult:
         """
         Jalankan satu siklus penuh.
-        Satu konten gagal tidak menghentikan siklus lain.
+
+        Mencoba beberapa topik (max_topic_attempts) sampai mendapat SATU konten
+        yang lolos ambang kualitas. Konten fallback (LLM gagal) atau di bawah
+        threshold TIDAK PERNAH dikirim — siklus mencoba topik lain, atau gagal
+        bersih tanpa mengirim sampah.
         """
         from database.db_manager import start_run, finish_run
         run_id = start_run()
-        produced = 0
-        errors = 0
 
         logger.info("=== Mulai siklus produksi (run #%d) ===", run_id)
         try:
-            # Tahap 1: Cari trend
-            trend = self._scout_trend()
-            if not trend:
+            # Tahap 1: Kumpulkan beberapa kandidat trend
+            candidates = self._scout_trends()
+            if not candidates:
                 logger.warning("Tidak ada trend segar, siklus dibatalkan")
                 finish_run(run_id, produced=0, errors=0)
                 return RunResult(success=False, reason="no_trend")
-            logger.info(f"Trend: '{trend.topic}' [{trend.source}]")
 
-            # Tahap 2: Pilih angle
-            strategy = self._strategize(trend)
-            logger.info(f"Angle: {strategy.angle_type} — {strategy.angle_description}")
+            last_reason = "no_quality_content"
+            for attempt, trend in enumerate(candidates[: self.max_topic_attempts], start=1):
+                logger.info("[Percobaan %d/%d] Trend: '%s' [%s]",
+                            attempt, self.max_topic_attempts, trend.topic, trend.source)
 
-            # Tahap 3: Buat draft konten (JP + ID)
-            draft = self._create(strategy)
-            logger.info(f"Draft JP ({len(draft.japanese)} chars): {draft.japanese[:60]}…")
+                package, reason = self._produce_for_trend(trend)
+                if package is None:
+                    last_reason = reason
+                    logger.info("  → topik di-skip (%s), coba topik lain", reason)
+                    continue
 
-            # Tahap 4-5: Loop Critic ⇄ Reviser maks N kali
-            package = self._critic_revise_loop(draft)
-            logger.info(
-                f"Skor final: {package.score}/100 | revisi: {package.revision_count}x"
-                + (" [BELOW-THRESHOLD]" if package.below_threshold else "")
-            )
+                # Cek duplikat semantik
+                if not self._dedup_check(package):
+                    logger.warning("  → konten terlalu mirip dengan yang sudah ada, coba topik lain")
+                    last_reason = "duplicate"
+                    continue
 
-            # Tahap 6: Cek duplikat semantik
-            if not self._dedup_check(package):
-                logger.warning("Konten terlalu mirip dengan yang sudah ada, dibuang")
-                finish_run(run_id, produced=0, errors=0)
-                return RunResult(success=False, reason="duplicate")
+                # Lolos semua gate → kirim
+                content_id = self._dispatch(package)
+                logger.info("Konten #%s dikirim | skor=%d verdict=%s",
+                            content_id, package.score, package.verdict)
+                finish_run(run_id, produced=1, errors=0)
+                return RunResult(success=True, content_id=content_id)
 
-            # Tahap 7: Kirim ke Telegram & simpan ke DB
-            content_id = self._dispatch(package)
-            produced = 1
-            logger.info(f"Konten #{content_id} berhasil dikirim ke Telegram")
-            finish_run(run_id, produced=produced, errors=errors)
-            return RunResult(success=True, content_id=content_id)
+            logger.warning("Tidak ada konten lolos kualitas dari %d topik (%s)",
+                           min(len(candidates), self.max_topic_attempts), last_reason)
+            finish_run(run_id, produced=0, errors=0)
+            return RunResult(success=False, reason=last_reason)
 
         except Exception as e:
-            errors = 1
             logger.error(f"Error dalam siklus produksi: {e}", exc_info=True)
-            finish_run(run_id, produced=produced, errors=errors)
+            finish_run(run_id, produced=0, errors=1)
             return RunResult(success=False, error=str(e))
+
+    def _produce_for_trend(self, trend: TrendCandidate):
+        """
+        Hasilkan ContentPackage layak-kirim untuk satu trend.
+        Kembalikan (package, "ok") jika lolos, atau (None, alasan) jika harus di-skip.
+        """
+        # Tahap 2: Pilih angle
+        strategy = self._strategize(trend)
+        logger.info("  Angle: %s — %s", strategy.angle_type, strategy.angle_description)
+
+        # Tahap 3: Buat draft konten (JP + ID)
+        draft = self._create(strategy)
+        if draft.is_fallback:
+            return None, "creator_fallback"   # LLM gagal — jangan kirim
+        logger.info("  Draft JP (%d chars): %s…", len(draft.japanese), draft.japanese[:60])
+
+        # Tahap 4-5: Loop Critic ⇄ Reviser
+        package = self._critic_revise_loop(draft)
+        logger.info("  Skor: %d/100 | verdict: %s | revisi: %dx",
+                    package.score, package.verdict, package.revision_count)
+
+        if package.is_fallback:
+            return None, "critic_fallback"    # LLM gagal menilai — jangan kirim
+        if package.below_threshold:
+            return None, "below_threshold"    # kualitas kurang — jangan kirim
+        return package, "ok"
 
     # ------------------------------------------------------------------
     # Tahap 1 — Trend Scout
     # ------------------------------------------------------------------
-    def _scout_trend(self) -> Optional[TrendCandidate]:
+    def _scout_trends(self) -> List[TrendCandidate]:
         """
         Cari topik segar dari RSS feeds + Google Trends JP.
-        Pilih secara acak dari top-5 untuk variasi tiap run.
+        Kembalikan list teracak agar run_cycle bisa mencoba beberapa topik.
         """
         from agents.trend_scout import scout_trends
         candidates = scout_trends()
         if not candidates:
-            return None
-        # Acak dari top-5 agar tidak selalu pakai kandidat pertama
-        top = candidates[:min(5, len(candidates))]
-        return random.choice(top)
+            return []
+        candidates = list(candidates)
+        random.shuffle(candidates)
+        return candidates
 
     # ------------------------------------------------------------------
     # Tahap 2 — Strategist
@@ -138,14 +167,19 @@ class Orchestrator:
         current_draft = draft
         best_draft = draft
         best_score = -1
+        best_verdict = "REJECT"
         best_breakdown: dict = {}
         revision_count = 0
+        any_fallback = False
 
         for iteration in range(self.max_revisions + 1):
             critic = review(current_draft)
+            if critic.is_fallback:
+                any_fallback = True  # LLM gagal menilai
 
             if critic.score > best_score:
                 best_score = critic.score
+                best_verdict = critic.verdict
                 best_breakdown = critic.breakdown
                 best_draft = current_draft
 
@@ -160,16 +194,21 @@ class Orchestrator:
             current_draft = revise(current_draft, critic)
             revision_count += 1
 
+        # Konten dianggap fallback jika ada penilaian fallback DAN tak ada skor valid
+        is_fallback = any_fallback and best_score <= 0
+
         return ContentPackage(
             topic=best_draft.topic,
             source_url=best_draft.source_url,
             angle_type=best_draft.angle_type,
             japanese=best_draft.japanese,
             indonesian=best_draft.indonesian,
-            score=best_score,
+            score=max(best_score, 0),
+            verdict=best_verdict,
             score_breakdown=best_breakdown,
             below_threshold=best_score < self.threshold,
             revision_count=revision_count,
+            is_fallback=is_fallback or best_draft.is_fallback,
         )
 
     # ------------------------------------------------------------------
