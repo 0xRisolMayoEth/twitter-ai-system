@@ -54,6 +54,7 @@ class TweetDraft(BaseModel):
     topic: str
     angle_type: str
     source_url: str = ""
+    is_fallback: bool = False            # True jika LLM gagal & ini draft darurat (jangan dikirim)
 
 
 # ------------------------------------------------------------------
@@ -62,12 +63,14 @@ class TweetDraft(BaseModel):
 class CriticResult(BaseModel):
     """Hasil penilaian dari Critic (skor 0-100 dengan rubrik per aspek)."""
     score: int                           # total 0-100
+    verdict: str = "REVISE"              # APPROVED | GOOD | REVISE | REJECT
     breakdown: Dict[str, int] = Field(  # skor per aspek
         default_factory=dict
         # contoh: {"hook": 22, "engagement": 16, "naturalness": 18, ...}
     )
     issues: List[str] = Field(default_factory=list)       # masalah yang ditemukan
     suggestions: List[str] = Field(default_factory=list)  # saran perbaikan spesifik
+    is_fallback: bool = False            # True jika ini hasil fallback (LLM gagal), bukan penilaian asli
 
 
 # ------------------------------------------------------------------
@@ -81,9 +84,11 @@ class ContentPackage(BaseModel):
     japanese: str
     indonesian: str
     score: int
+    verdict: str = "REVISE"              # APPROVED | GOOD | REVISE | REJECT
     score_breakdown: Dict[str, int] = Field(default_factory=dict)
-    below_threshold: bool = False        # True jika skor < threshold setelah 5 revisi
+    below_threshold: bool = False        # True jika skor < threshold setelah N revisi
     revision_count: int = 0
+    is_fallback: bool = False            # True jika konten berasal dari fallback (LLM gagal)
 
 
 # ------------------------------------------------------------------

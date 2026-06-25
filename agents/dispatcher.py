@@ -34,6 +34,12 @@ _TG_API = "https://api.telegram.org/bot{token}/sendMessage"
 _MAX_RETRIES = 3
 _RETRY_BASE  = 2  # detik
 
+# Tag header per verdict (hanya konten lolos kualitas yang dikirim)
+_VERDICT_TAG = {
+    "APPROVED": "✅ <b>APPROVED</b>",
+    "GOOD":     "⚡ <b>GOOD</b>",
+}
+
 
 def dispatch(package: ContentPackage) -> int:
     """
@@ -94,32 +100,25 @@ def format_message(package: ContentPackage) -> str:
     jp_safe   = html.escape(package.japanese)
     indo_safe = html.escape(package.indonesian)
 
+    # Tag verdict — hanya konten lolos kualitas yang sampai ke sini
+    tag = _VERDICT_TAG.get(package.verdict, "")
+
     parts = [
-        sep,
+        f"{tag}".strip() or sep,
+        sep if tag else None,
         f"🇯🇵 {jp_safe}",
         "",
         f"🇮🇩 {indo_safe}",
         sep,
+        f'📊 Skor: <b>{package.score}/100</b>  |  Angle: {package.angle_type}',
     ]
-
-    # Baris metadata
-    score_line = f'📊 Skor: <b>{package.score}/100</b>  |  Angle: {package.angle_type}'
-    parts.append(score_line)
 
     # URL sumber jika ada
     if package.source_url:
         url_safe = html.escape(package.source_url)
         parts.append(f'🔗 <a href="{url_safe}">Sumber berita</a>')
 
-    # Peringatan jika di bawah threshold
-    if package.below_threshold:
-        cfg = load_config()
-        threshold = cfg.get("scoring", {}).get("threshold", 80)
-        parts.append(
-            f'⚠️ <i>Skor di bawah threshold ({threshold}) — konten tetap dikirim</i>'
-        )
-
-    return "\n".join(parts)
+    return "\n".join(p for p in parts if p is not None)
 
 
 # ------------------------------------------------------------------
