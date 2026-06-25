@@ -125,6 +125,14 @@ class TestFormatMessage(unittest.TestCase):
         self.assertIn("🇯🇵", msg)
         self.assertIn("🇮🇩", msg)
 
+    def test_jp_tweet_wrapped_in_code_tag(self):
+        """JP tweet harus dibungkus <code> agar bisa dicopy sekali tap di Telegram."""
+        from agents.dispatcher import format_message
+        pkg = _make_package(jp="AIの話題ツイートです")
+        with mock.patch("agents.dispatcher.load_config", return_value={"scoring": {"threshold": 80}}):
+            msg = format_message(pkg)
+        self.assertIn("<code>AIの話題ツイートです</code>", msg)
+
 
 class TestSendTelegram(unittest.TestCase):
     def test_returns_false_when_no_token(self):

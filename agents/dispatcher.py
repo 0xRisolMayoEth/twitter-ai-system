@@ -106,7 +106,7 @@ def format_message(package: ContentPackage) -> str:
     parts = [
         f"{tag}".strip() or sep,
         sep if tag else None,
-        f"🇯🇵 {jp_safe}",
+        f"🇯🇵 <code>{jp_safe}</code>",
         "",
         f"🇮🇩 {indo_safe}",
         sep,
