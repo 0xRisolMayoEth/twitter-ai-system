@@ -110,6 +110,41 @@ fallback_topics:
   - "スマートフォン最新情報"
 
 # -----------------------------------------------------------
+# Agent Reach — sumber trend multi-channel (opsional)
+# Aktif hanya bila env USE_AGENT_REACH=true (lihat .env.example).
+# CLI yang belum terpasang otomatis di-skip (graceful degradation).
+# -----------------------------------------------------------
+agent_reach:
+  min_results: 3          # di bawah ini → jatuh ke RSS fallback
+
+  twitter:
+    enabled: true
+    # Template perintah; {kw} diganti tiap keyword. Output JSON di stdout.
+    # Sesuaikan di VPS setelah `agent-reach doctor`.
+    command: ["twitter", "search", "{kw}", "--json"]
+    keywords: ["AI", "ゲーム", "アニメ", "日本 バズ"]
+    per_keyword: 10
+    min_likes: 100
+    min_retweets: 20
+
+  web_search:
+    enabled: true
+    # {query} & {n} diganti. Default: mcporter memanggil Exa MCP.
+    command: ["mcporter", "call", "exa", "search", "--query", "{query}", "--num", "{n}"]
+    queries:
+      - "日本 トレンド 最新"
+      - "日本 テクノロジー ニュース 今週"
+      - "Japan viral this week"
+    per_query: 8
+
+  reddit:
+    enabled: true          # JSON publik, tanpa cookie — jalan di mana saja
+    subreddits: ["Japan", "technology", "gaming", "artificial"]
+    min_upvotes: 500
+    per_subreddit: 10
+    timeframe: "day"
+
+# -----------------------------------------------------------
 # Google Trends Japan (via pytrends)
 # -----------------------------------------------------------
 google_trends:

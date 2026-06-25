@@ -9,6 +9,7 @@ penuh di tahap upgrade masing-masing. Saat ini sebagian masih stub
 yang memanggil modul lama agar sistem tetap bisa jalan.
 """
 import logging
+import os
 import random
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -125,10 +126,18 @@ class Orchestrator:
     # ------------------------------------------------------------------
     def _scout_trends(self) -> List[TrendCandidate]:
         """
-        Cari topik segar dari RSS feeds + Google Trends JP.
-        Kembalikan list teracak agar run_cycle bisa mencoba beberapa topik.
+        Cari topik segar dari sumber trend.
+
+        Feature flag USE_AGENT_REACH:
+          - "true"  → agents.trend_reach (Twitter/X + Web + Reddit + RSS fallback)
+          - lainnya → agents.trend_scout (RSS + Google Trends, perilaku lama)
+        Keduanya mengekspos scout_trends() -> List[TrendCandidate] yang identik,
+        jadi rollback cukup dengan mengubah satu env var.
         """
-        from agents.trend_scout import scout_trends
+        if os.getenv("USE_AGENT_REACH", "false").lower() == "true":
+            from agents.trend_reach import scout_trends
+        else:
+            from agents.trend_scout import scout_trends
         candidates = scout_trends()
         if not candidates:
             return []
