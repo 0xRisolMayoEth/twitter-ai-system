@@ -147,6 +147,70 @@ class TestRedditSource(unittest.TestCase):
         self.assertEqual(tr._from_reddit(self._conf(enabled=False)), [])
 
 
+class TestRedditCliPath(unittest.TestCase):
+    """Jalur rdt-cli opsional + dispatcher _from_reddit()."""
+
+    def _conf(self, **over):
+        base = {
+            "enabled": True,
+            "use_cli": True,
+            "command": ["rdt", "hot", "{subreddit}", "--json", "--limit", "{n}"],
+            "subreddits": ["Japan"],
+            "min_upvotes": 500,
+            "per_subreddit": 10,
+            "timeframe": "day",
+        }
+        base.update(over)
+        return base
+
+    def test_cli_path_parses_and_filters(self):
+        payload = json.dumps([
+            {"title": "cli hot post", "ups": 700, "permalink": "/r/Japan/abc"},
+            {"title": "low", "ups": 10},
+            {"title": "pinned", "ups": 9999, "stickied": True},
+        ])
+        with mock.patch("agents.trend_reach._have_cli", return_value=True), \
+             mock.patch("agents.trend_reach._run_cli", return_value=payload):
+            out = tr._from_reddit(self._conf())
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0].topic, "cli hot post")
+        self.assertTrue(out[0].url.endswith("/r/Japan/abc"))
+
+    def test_cli_path_handles_nested_data_schema(self):
+        payload = json.dumps([{"data": {"title": "nested", "score": 600,
+                                        "permalink": "/r/Japan/n"}}])
+        with mock.patch("agents.trend_reach._have_cli", return_value=True), \
+             mock.patch("agents.trend_reach._run_cli", return_value=payload):
+            out = tr._from_reddit(self._conf())
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0].topic, "nested")
+
+    def test_falls_back_to_json_when_cli_absent(self):
+        """use_cli=true tapi rdt tidak terpasang → pakai JSON publik."""
+        json_resp = mock.MagicMock()
+        json_resp.raise_for_status = mock.MagicMock()
+        json_resp.json.return_value = {"data": {"children": [
+            {"data": {"title": "via json", "ups": 800, "permalink": "/r/Japan/j"}},
+        ]}}
+        with mock.patch("agents.trend_reach._have_cli", return_value=False), \
+             mock.patch("requests.get", return_value=json_resp) as mget:
+            out = tr._from_reddit(self._conf())
+        mget.assert_called_once()           # benar-benar lewat jalur HTTP
+        self.assertEqual(out[0].topic, "via json")
+
+    def test_use_cli_false_uses_json(self):
+        json_resp = mock.MagicMock()
+        json_resp.raise_for_status = mock.MagicMock()
+        json_resp.json.return_value = {"data": {"children": [
+            {"data": {"title": "json default", "ups": 900, "permalink": "/r/Japan/d"}},
+        ]}}
+        with mock.patch("agents.trend_reach._run_cli") as mcli, \
+             mock.patch("requests.get", return_value=json_resp):
+            out = tr._from_reddit(self._conf(use_cli=False))
+        mcli.assert_not_called()            # CLI tidak dipanggil sama sekali
+        self.assertEqual(out[0].topic, "json default")
+
+
 # ----------------------------------------------------------------------
 # Dedup
 # ----------------------------------------------------------------------

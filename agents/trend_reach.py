@@ -90,6 +90,9 @@ def _reach_config() -> dict:
         },
         "reddit": {
             "enabled": rd.get("enabled", True),
+            "use_cli": rd.get("use_cli", False),    # true → rdt-cli; default JSON publik
+            "command": rd.get("command",
+                              ["rdt", "hot", "{subreddit}", "--json", "--limit", "{n}"]),
             "subreddits": rd.get("subreddits",
                                  ["Japan", "technology", "gaming", "artificial"]),
             "min_upvotes": int(rd.get("min_upvotes", 500)),
@@ -189,9 +192,59 @@ def _from_web_search(conf: dict) -> List[TrendCandidate]:
 # ======================================================================
 
 def _from_reddit(conf: dict) -> List[TrendCandidate]:
+    """
+    Dispatcher Reddit:
+      - use_cli=true + `rdt` terpasang → jalur rdt-cli (agent-reach)
+      - selain itu                     → JSON publik (tanpa cookie, default)
+    rdt-cli yang diminta tapi belum terpasang otomatis jatuh ke JSON publik.
+    """
     if not conf["enabled"]:
         return []
 
+    if conf.get("use_cli") and conf.get("command"):
+        if _have_cli(conf["command"]):
+            return _from_reddit_cli(conf)
+        logger.warning("rdt-cli (%s) diminta tapi tidak terpasang — pakai JSON publik",
+                       conf["command"][0])
+    return _from_reddit_json(conf)
+
+
+def _from_reddit_cli(conf: dict) -> List[TrendCandidate]:
+    """Ambil hot posts via CLI `rdt` (agent-reach). Output JSON di stdout."""
+    cmd_tmpl = conf["command"]
+    n = str(conf["per_subreddit"])
+    out: List[TrendCandidate] = []
+    for sub in conf["subreddits"]:
+        argv = [p.replace("{subreddit}", sub).replace("{sub}", sub).replace("{n}", n)
+                for p in cmd_tmpl]
+        raw = _run_cli(argv)
+        if not raw:
+            continue
+        for item in _iter_json_items(raw)[: conf["per_subreddit"]]:
+            if item.get("stickied") or _dig(item, "data.stickied"):
+                continue
+            ups = _first_int(item, ("ups", "score", "upvotes",
+                                    "data.ups", "data.score"))
+            if ups < conf["min_upvotes"]:
+                continue
+            title = _first_str(item, ("title", "data.title")).strip()
+            if not title:
+                continue
+            url = _first_str(item, ("url", "permalink", "data.permalink", "data.url"))
+            if url.startswith("/r/"):
+                url = "https://www.reddit.com" + url
+            out.append(TrendCandidate(
+                topic=title[:200],
+                source=f"Reddit r/{sub}",
+                url=url,
+                freshness=_now(),
+                raw_summary=_first_str(item, ("selftext", "data.selftext"))[:300],
+                category="en",
+            ))
+    return out
+
+
+def _from_reddit_json(conf: dict) -> List[TrendCandidate]:
     out: List[TrendCandidate] = []
     for sub in conf["subreddits"]:
         url = f"https://www.reddit.com/r/{sub}/hot.json"

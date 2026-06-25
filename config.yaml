@@ -138,7 +138,10 @@ agent_reach:
     per_query: 8
 
   reddit:
-    enabled: true          # JSON publik, tanpa cookie — jalan di mana saja
+    enabled: true          # default: JSON publik, tanpa cookie — jalan di mana saja
+    use_cli: false         # true → pakai rdt-cli (agent-reach) bila terpasang
+    # Template rdt-cli; {subreddit} & {n} diganti. Output JSON di stdout.
+    command: ["rdt", "hot", "{subreddit}", "--json", "--limit", "{n}"]
     subreddits: ["Japan", "technology", "gaming", "artificial"]
     min_upvotes: 500
     per_subreddit: 10
