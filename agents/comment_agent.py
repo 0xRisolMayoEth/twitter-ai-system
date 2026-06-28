@@ -81,17 +81,25 @@ Berikut postingan orang lain (bahasa Jepang) yang ingin kamu komentari:
 {jp_text}
 \"\"\"
 
-Buat {N_COMMENTS} SARAN komentar berbeda. Tujuan: ENGAGEMENT & VIEW tinggi.
-Tiap komentar:
-• Bahasa Jepang natural (口語体), pendek (≤80 karakter), terasa manusiawi
-• Punya sudut berbeda satu sama lain, pilih dari: empati/setuju, pertanyaan
-  yang memancing balasan, atau humor ringan yang relatable
+LANGKAH 1 — PAHAMI dulu isinya: apa inti postingan ini, apa emosi/maksudnya,
+dan apa detail spesifik yang bisa kamu tanggapi. JANGAN balas template umum.
+
+LANGKAH 2 — Buat {N_COMMENTS} SARAN komentar berbeda. Tujuan: ENGAGEMENT &
+VIEW tinggi. Tiap komentar:
+• RELEVAN dengan isi spesifik postingan (sebut/singgung hal konkret di dalamnya,
+  bukan komentar yang bisa ditempel ke postingan apa pun)
+• Bahasa Jepang SANTAI seperti ngobrol sama teman (口語体/タメ口 wajar,
+  boleh ね/よ/じゃん/わ/笑). Bukan kaku, bukan formal.
+• JANGAN terlalu pendek — buat yang berisi, kira-kira 1–2 kalimat
+  (sekitar 40–120 karakter), terasa seperti orang sungguhan menanggapi
+• Tiap komentar punya sudut berbeda: empati/setuju, pertanyaan yang memancing
+  balasan, atau humor ringan yang relatable
 • Boleh 0–2 emoji bila pas
 
 ATURAN PENTING:
 • DILARANG menyinggung, menghina, sarkas menyerang, SARA, politik, body-shaming
 • Jangan menggurui, jangan spam, jangan promosi
-• Positif / netral / ramah — aman untuk semua orang
+• Santai & ramah — aman untuk semua orang
 
 Untuk tiap komentar Jepang, sertakan terjemahan Indonesianya (santai, natural).
 
@@ -133,9 +141,15 @@ def _fallback(jp_text: str) -> CommentSet:
     """Saran komentar darurat (aman & netral) bila LLM gagal."""
     return CommentSet(
         comments=[
-            Comment(japanese="これめっちゃ分かる…！", indonesian="Ini relatable banget…!", angle="empati"),
-            Comment(japanese="ちなみにこれってどう思います？", indonesian="Btw, menurut kalian gimana?", angle="pertanyaan"),
-            Comment(japanese="朝からこれは効くな〜笑", indonesian="Dari pagi udah kena nih wkwk", angle="humor"),
+            Comment(japanese="いやこれめっちゃ分かるわ…自分も同じこと思ってたとこ！",
+                    indonesian="Ini relatable banget sih… gue juga lagi mikirin hal yang sama!",
+                    angle="empati"),
+            Comment(japanese="ちなみにこういうの、みんなはどうやって乗り切ってるんだろ？気になる〜",
+                    indonesian="Btw kalau yang kayak gini, pada ngadepinnya gimana ya? Penasaran~",
+                    angle="pertanyaan"),
+            Comment(japanese="朝からこれはなかなか効くやつだわ…笑 でもなんか元気もらった！",
+                    indonesian="Dari pagi udah kena yang kayak gini wkwk tapi malah jadi semangat!",
+                    angle="humor"),
         ],
         source_text=jp_text,
         is_fallback=True,
