@@ -6,7 +6,7 @@ Cara jalan:
     python main.py --test-once      # satu siklus orchestrator untuk lihat output (dev/test)
     python main.py --orchestrator   # sama dengan --test-once
     python main.py --once           # satu siklus pipeline lama (legacy)
-    python main.py --bot            # Telegram bot polling saja (legacy)
+    python main.py --bot            # Comment Agent bot: kirim screenshot → 3 saran komentar JP+ID
     python main.py                  # mode default: bot + scheduler lama (legacy)
 """
 import sys
