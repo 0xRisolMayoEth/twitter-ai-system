@@ -4,39 +4,36 @@
 # =============================================================
 
 # Niche & topik utama (gunakan bahasa natural, bisa Jepang atau Indonesia)
-niche: "berita & hal unik terbaru untuk audiens Jepang"
+niche: "kehidupan sehari-hari salaryman Jepang (commute, lembur, makan siang, gaji)"
 
-# Register bahasa tweet: "casual" (futsū-form, sehari-hari) | "formal" (keigo)
+# Register bahasa tweet: "casual" (口語体, sehari-hari) | "formal" (keigo)
 tweet_register: "casual"
 
-# Persona content creator
+# Persona content creator — 田中サトル, salaryman Tokyo
 persona:
-  name: "JP トレンドハンター"
+  name: "田中サトル"
   description: >
-    Kamu orang Jepang yang selalu tahu tren terbaru sebelum orang lain, dan suka
-    membagikan REAKSI serta PENDAPATmu — bukan sekadar meneruskan berita.
-    Saat baca sesuatu yang menarik, kamu langsung mikir "ini artinya apa?",
-    "kenapa ini penting?", "menurutku sih…", lalu ngetweet seperti ngobrol sama
-    teman: natural, kadang pakai ね/よ/けど, sesekali w/笑, emoji secukupnya.
-    Kamu PUNYA opini dan berani ambil sudut pandang. Kamu BUKAN media berita,
-    BUKAN akun korporat, BUKAN bot penerjemah judul. Followers suka kamu karena
-    kamu kasih insight + reaksi jujur, bukan cuma fakta mentah.
+    Kamu 田中サトル, 32 tahun, salaryman biasa di Tokyo. Tiap hari commute 1 jam
+    naik kereta yang penuh sesak, kerja kantoran, sering lembur, dan menanti gajian.
+    Kamu nge-tweet pakai bahasa Jepang sehari-hari (口語体) tentang hal-hal kecil
+    yang dialami semua salaryman — sambil menghubungkannya ke pengalaman pribadimu.
+    Nada: santai, jujur, kadang capek tapi lucu, self-deprecating. Pakai emoji
+    secukupnya. Kamu BUKAN akun berita, BUKAN promosi, BUKAN korporat. Followers
+    suka kamu karena bikin mereka mikir "あー、わかる" (ini gue banget).
 
 # -----------------------------------------------------------
-# Scoring & quality control
+# Scoring & quality control (Critic salaryman: 4 dimensi 1–10)
 # -----------------------------------------------------------
 scoring:
-  threshold: 75        # skor minimum 0-100 untuk lolos ke Telegram (< ini → skip, tidak dikirim)
-  max_revisions: 2     # maksimal loop Critic ⇄ Reviser per topik
-  max_topic_attempts: 3  # coba berapa topik berbeda per siklus sebelum menyerah
-  # Bobot per aspek (total harus = 100)
-  weights:
-    hook: 25           # kekuatan hook / kalimat pembuka
-    engagement: 20     # potensi engagement & shareability
-    naturalness: 20    # terlihat natural, bukan AI
-    japanese_quality: 15  # kealamian bahasa Jepang (futsū-form)
-    relevance: 10      # relevansi & kesegaran untuk audiens JP
-    format: 10         # panjang, hashtag, emoji
+  min_dimension_score: 6   # jika SALAH SATU dimensi < ini → REJECT + rewrite otomatis
+  max_revisions: 2         # maksimal rewrite otomatis per topik
+  max_topic_attempts: 3    # coba berapa topik berbeda per siklus sebelum menyerah
+  # 4 dimensi penilaian, masing-masing skala 1–10
+  dimensions:
+    - relatability         # seberapa "ini gue banget" untuk salaryman
+    - naturalness          # terdengar seperti manusia, bukan AI/berita
+    - engagement           # potensi like/RT/reply
+    - topic_fit            # nyambung dengan trending topic & persona
 
 # -----------------------------------------------------------
 # Dedup semantik
@@ -50,11 +47,9 @@ dedup:
 # Scheduling (zona waktu JST / Asia/Tokyo)
 # -----------------------------------------------------------
 scheduling:
-  daily_target: 20          # konten per hari
-  active_hours_jst:
-    start: 7                # mulai jam 07:00 JST
-    end: 24                 # sampai jam 00:00 JST (tengah malam)
-  jitter_minutes: 10        # jitter acak ±N menit agar tidak robotik
+  daily_target: 4                  # 4 tweet/hari
+  posting_hours_jst: [0, 6, 12, 18]  # setiap 6 jam: 00:00, 06:00, 12:00, 18:00 JST
+  # active_hours_jst & jitter_minutes lama tidak dipakai lagi (jadwal kini tetap)
 
 # -----------------------------------------------------------
 # Sumber RSS (tambah/kurangi sesuai kebutuhan)

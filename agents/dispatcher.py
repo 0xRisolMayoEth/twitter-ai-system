@@ -18,8 +18,10 @@ import html
 import logging
 import os
 import time
+from datetime import datetime
 from typing import Optional
 
+import pytz
 import requests
 
 from core.config import load_config
@@ -33,12 +35,18 @@ logger = get_logger("dispatcher")
 _TG_API = "https://api.telegram.org/bot{token}/sendMessage"
 _MAX_RETRIES = 3
 _RETRY_BASE  = 2  # detik
+_JST = pytz.timezone("Asia/Tokyo")
 
-# Tag header per verdict (hanya konten lolos kualitas yang dikirim)
-_VERDICT_TAG = {
-    "APPROVED": "✅ <b>APPROVED</b>",
-    "GOOD":     "⚡ <b>GOOD</b>",
-}
+
+def _slot_label(hour: int) -> str:
+    """Label slot posting JST: pagi/siang/sore/malam."""
+    if 5 <= hour <= 10:
+        return "pagi"
+    if 11 <= hour <= 14:
+        return "siang"
+    if 15 <= hour <= 18:
+        return "sore"
+    return "malam"
 
 
 def dispatch(package: ContentPackage) -> int:
@@ -83,42 +91,54 @@ def dispatch(package: ContentPackage) -> int:
 
 def format_message(package: ContentPackage) -> str:
     """
-    Format pesan Telegram bilingual.
+    Format pesan Telegram untuk review salaryman (format-only, tanpa posting).
 
     Contoh output:
-    ━━━━━━━━━━━━━━━━━━━━
-    🇯🇵 AIのニュース、知らなかった人多そう...
+    🕐 06:00 — Jadwal posting pagi
+    📝 DRAFT TWEET:
+    <code>満員電車で...😮‍💨 #サラリーマン</code>
 
-    🇮🇩 Pada belum tau nih soal AI terbaru...
-    ━━━━━━━━━━━━━━━━━━━━
-    📊 Skor: <b>82/100</b>  |  Angle: news_insight
-    🔗 <a href="https://...">Sumber</a>
-    ⚠️ <i>Skor di bawah threshold — konten tetap dikirim</i>
+    🇮🇩 Di kereta penuh sesak...
+
+    📊 SCORE: 8/10
+    🖼️ REKOMENDASI GAMBAR:
+    - crowded tokyo train morning
+    - tired office worker desk
+    - 満員電車 イラスト
+
+    ✅ Ketik /approve untuk post
+    ❌ Ketik /reject untuk skip
     """
-    sep = "━" * 20
+    now = datetime.now(_JST)
+    jam = now.strftime("%H:%M")
+    label = _slot_label(now.hour)
 
     jp_safe   = html.escape(package.japanese)
     indo_safe = html.escape(package.indonesian)
 
-    # Tag verdict — hanya konten lolos kualitas yang sampai ke sini
-    tag = _VERDICT_TAG.get(package.verdict, "")
-
     parts = [
-        f"{tag}".strip() or sep,
-        sep if tag else None,
-        f"🇯🇵 <code>{jp_safe}</code>",
+        f"🕐 {jam} — Jadwal posting {label}",
+        "📝 DRAFT TWEET:",
+        f"<code>{jp_safe}</code>",
         "",
         f"🇮🇩 {indo_safe}",
-        sep,
-        f'📊 Skor: <b>{package.score}/100</b>  |  Angle: {package.angle_type}',
+        "",
+        f"📊 SCORE: <b>{package.score}/10</b>",
     ]
 
-    # URL sumber jika ada
-    if package.source_url:
-        url_safe = html.escape(package.source_url)
-        parts.append(f'🔗 <a href="{url_safe}">Sumber berita</a>')
+    # Rekomendasi gambar dari Image Agent
+    if package.image and package.image.google_search_queries:
+        parts.append("🖼️ REKOMENDASI GAMBAR:")
+        for q in package.image.google_search_queries[:3]:
+            parts.append(f"- {html.escape(q)}")
 
-    return "\n".join(p for p in parts if p is not None)
+    parts += [
+        "",
+        "✅ Ketik /approve untuk post",
+        "❌ Ketik /reject untuk skip",
+    ]
+
+    return "\n".join(parts)
 
 
 # ------------------------------------------------------------------
