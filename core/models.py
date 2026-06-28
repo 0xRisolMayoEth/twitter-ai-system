@@ -122,6 +122,23 @@ class ContentPackage(BaseModel):
 
 
 # ------------------------------------------------------------------
+# 5b. Comment Agent (on-demand dari screenshot)
+# ------------------------------------------------------------------
+class Comment(BaseModel):
+    """Satu saran komentar dua bahasa."""
+    japanese: str
+    indonesian: str
+    angle: str = ""                      # tipe komentar: empati / pertanyaan / humor
+
+
+class CommentSet(BaseModel):
+    """Kumpulan saran komentar untuk satu postingan (dari screenshot)."""
+    comments: List[Comment] = Field(default_factory=list)
+    source_text: str = ""                # teks Jepang yang terbaca dari gambar
+    is_fallback: bool = False
+
+
+# ------------------------------------------------------------------
 # 6. Hasil satu siklus orchestrator
 # ------------------------------------------------------------------
 class RunResult(BaseModel):
