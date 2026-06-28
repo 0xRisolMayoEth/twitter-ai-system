@@ -91,9 +91,9 @@ VIEW tinggi. Tiap komentar:
   bukan komentar yang bisa ditempel ke postingan apa pun)
 • Bahasa Jepang SANTAI seperti ngobrol sama teman (口語体/タメ口 wajar,
   boleh ね/よ/じゃん/わ/笑). Bukan kaku, bukan formal.
-• PANJANG & BERISI — WAJIB 2–3 kalimat (sekitar 90–180 karakter Jepang).
-  Jangan satu kalimat pendek. Kembangkan: reaksi + alasan/pengalaman pribadi
-  singkat + (kalau pas) pertanyaan lanjutan, supaya terasa hidup & ngajak ngobrol.
+• PANJANG PAS — MAKSIMAL 2 kalimat, tapi MINIMAL 10 kata. Jangan satu kalimat
+  pendek, jangan juga kepanjangan. Berisi: reaksi + alasan/pengalaman singkat
+  (boleh diakhiri pertanyaan) supaya terasa hidup & ngajak ngobrol.
 • Tiap komentar punya sudut berbeda: empati/setuju, pertanyaan yang memancing
   balasan, atau humor ringan yang relatable
 • Boleh 0–2 emoji bila pas
@@ -148,20 +148,20 @@ def _fallback(jp_text: str) -> CommentSet:
     """Saran komentar darurat (aman & netral) bila LLM gagal."""
     return CommentSet(
         comments=[
-            Comment(japanese="いやこれめっちゃ分かるわ…。自分も全く同じこと思ってたとこだし、"
-                             "言葉にしてくれて逆にスッキリした。ほんと共感しかない！",
-                    indonesian="Ini relatable banget sih… gue juga lagi mikirin hal yang persis sama, "
-                               "malah lega ada yang ngomongin. Setuju total!",
+            Comment(japanese="いやこれめっちゃ分かるわ、自分も全く同じこと思ってたとこ。"
+                             "言葉にしてくれてなんかスッキリした！",
+                    indonesian="Ini relatable banget, gue juga lagi mikirin hal yang persis sama. "
+                               "Lega ada yang ngomongin!",
                     angle="empati"),
-            Comment(japanese="これ気になるんだけど、みんなはこういう時どうやって乗り切ってるんだろ？"
-                             "自分はいつも悩むから、よかったらコツ教えてほしいな〜。",
-                    indonesian="Ini bikin penasaran sih, kalau lagi gini kalian ngadepinnya gimana? "
-                               "Gue selalu bingung, share tipsnya dong~",
+            Comment(japanese="これ気になるんだけど、みんなはこういう時どうやって乗り切ってるの？"
+                             "自分はいつも悩んじゃうんだよね。",
+                    indonesian="Ini bikin penasaran, kalau lagi gini kalian ngadepinnya gimana? "
+                               "Gue selalu bingung sih.",
                     angle="pertanyaan"),
-            Comment(japanese="朝からこれはなかなか効くやつだわ…笑。正直ちょっと笑っちゃったけど、"
-                             "なんだかんだで元気もらった気がする。今日も頑張れそう！",
-                    indonesian="Dari pagi udah kena yang kayak gini wkwk. Jujur sempet ketawa, "
-                               "tapi malah jadi dapet semangat. Gas hari ini!",
+            Comment(japanese="朝からこれはなかなか効くやつだわ、正直ちょっと笑っちゃった。"
+                             "でもなんだかんだで元気もらえたかも！",
+                    indonesian="Dari pagi udah kena yang kayak gini, jujur sempet ketawa. "
+                               "Tapi malah jadi dapet semangat!",
                     angle="humor"),
         ],
         source_text=jp_text,
