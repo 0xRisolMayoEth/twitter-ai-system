@@ -32,10 +32,11 @@ class Orchestrator:
 
     def __init__(self):
         self.config = load_config()
-        self.threshold = self.config["scoring"]["threshold"]
-        self.max_revisions = self.config["scoring"]["max_revisions"]
+        scoring = self.config.get("scoring", {})
+        self.min_dimension_score = scoring.get("min_dimension_score", 6)
+        self.max_revisions = scoring.get("max_revisions", 2)
         # Berapa banyak topik berbeda yang dicoba per siklus sebelum menyerah
-        self.max_topic_attempts = self.config["scoring"].get("max_topic_attempts", 3)
+        self.max_topic_attempts = scoring.get("max_topic_attempts", 3)
 
     # ------------------------------------------------------------------
     # Entry point
@@ -54,19 +55,27 @@ class Orchestrator:
 
         logger.info("=== Mulai siklus produksi (run #%d) ===", run_id)
         try:
-            # Tahap 1: Kumpulkan beberapa kandidat trend
+            # Tahap 1: Kumpulkan kandidat trend mentah
             candidates = self._scout_trends()
             if not candidates:
                 logger.warning("Tidak ada trend segar, siklus dibatalkan")
                 finish_run(run_id, produced=0, errors=0)
                 return RunResult(success=False, reason="no_trend")
 
-            last_reason = "no_quality_content"
-            for attempt, trend in enumerate(candidates[: self.max_topic_attempts], start=1):
-                logger.info("[Percobaan %d/%d] Trend: '%s' [%s]",
-                            attempt, self.max_topic_attempts, trend.topic, trend.source)
+            # Tahap 2: TREND AGENT pilih topik salaryman-relatable (ranked)
+            selections = self._select_trends(candidates)
+            if not selections:
+                logger.warning("Tidak ada topik relatable untuk salaryman")
+                finish_run(run_id, produced=0, errors=0)
+                return RunResult(success=False, reason="no_relatable_topic")
 
-                package, reason = self._produce_for_trend(trend)
+            last_reason = "no_quality_content"
+            for attempt, selection in enumerate(selections[: self.max_topic_attempts], start=1):
+                logger.info("[Percobaan %d/%d] Topik: '%s' [%s]",
+                            attempt, self.max_topic_attempts,
+                            selection.topic, selection.topic_category)
+
+                package, reason = self._produce_for_trend(selection)
                 if package is None:
                     last_reason = reason
                     logger.info("  → topik di-skip (%s), coba topik lain", reason)
@@ -95,30 +104,29 @@ class Orchestrator:
             finish_run(run_id, produced=0, errors=1)
             return RunResult(success=False, error=str(e))
 
-    def _produce_for_trend(self, trend: TrendCandidate):
+    def _produce_for_trend(self, selection: StrategistOutput):
         """
-        Hasilkan ContentPackage layak-kirim untuk satu trend.
-        Kembalikan (package, "ok") jika lolos, atau (None, alasan) jika harus di-skip.
+        Hasilkan ContentPackage layak-kirim untuk satu pilihan trend.
+        Kembalikan (package, "ok") jika lolos, atau (None, alasan) jika di-skip.
         """
-        # Tahap 2: Pilih angle
-        strategy = self._strategize(trend)
-        logger.info("  Angle: %s — %s", strategy.angle_type, strategy.angle_description)
-
-        # Tahap 3: Buat draft konten (JP + ID)
-        draft = self._create(strategy)
+        # Tahap 3: WRITER — tulis tweet salaryman (JP + ID)
+        draft = self._create(selection)
         if draft.is_fallback:
             return None, "creator_fallback"   # LLM gagal — jangan kirim
         logger.info("  Draft JP (%d chars): %s…", len(draft.japanese), draft.japanese[:60])
 
-        # Tahap 4-5: Loop Critic ⇄ Reviser
+        # Tahap 4: CRITIC ⇄ rewrite otomatis
         package = self._critic_revise_loop(draft)
-        logger.info("  Skor: %d/100 | verdict: %s | revisi: %dx",
+        logger.info("  Skor: %d/10 | verdict: %s | revisi: %dx",
                     package.score, package.verdict, package.revision_count)
 
         if package.is_fallback:
             return None, "critic_fallback"    # LLM gagal menilai — jangan kirim
         if package.below_threshold:
-            return None, "below_threshold"    # kualitas kurang — jangan kirim
+            return None, "below_threshold"    # ada dimensi < min — jangan kirim
+
+        # Tahap 5: IMAGE AGENT — rekomendasi gambar (tidak memblok pengiriman)
+        package.image = self._recommend_image(package, selection)
         return package, "ok"
 
     # ------------------------------------------------------------------
@@ -146,35 +154,49 @@ class Orchestrator:
         return candidates
 
     # ------------------------------------------------------------------
-    # Tahap 2 — Strategist
+    # Tahap 2 — TREND AGENT (pilih topik salaryman-relatable)
     # ------------------------------------------------------------------
-    def _strategize(self, trend: TrendCandidate) -> StrategistOutput:
-        """Pilih angle berpotensi engagement tinggi via LLM."""
-        from agents.strategist import pick_angle
-        return pick_angle(trend)
+    def _select_trends(self, candidates: List[TrendCandidate]) -> List[StrategistOutput]:
+        """Pilih topik relatable untuk salaryman (terurut)."""
+        from agents.strategist import select_trends
+        return select_trends(candidates)
 
     # ------------------------------------------------------------------
-    # Tahap 3 — Creator (Writer)
+    # Tahap 3 — WRITER (田中サトル)
     # ------------------------------------------------------------------
-    def _create(self, strategy: StrategistOutput) -> TweetDraft:
-        """Tulis tweet JP + ID berdasarkan angle dari Strategist."""
+    def _create(self, selection: StrategistOutput) -> TweetDraft:
+        """Tulis tweet salaryman JP + ID."""
         from agents.creator import create_tweet
-        return create_tweet(strategy)
+        return create_tweet(selection)
+
+    # ------------------------------------------------------------------
+    # Tahap 5 — IMAGE AGENT
+    # ------------------------------------------------------------------
+    def _recommend_image(self, package: ContentPackage, selection: StrategistOutput):
+        """Rekomendasi gambar pendukung (gagal → None, tidak memblok)."""
+        try:
+            from agents.image_agent import recommend_image
+            return recommend_image(
+                package.japanese, package.topic, selection.search_query_for_image
+            )
+        except Exception as e:
+            logger.warning("Image Agent gagal: %s — lanjut tanpa gambar", e)
+            return None
 
     # ------------------------------------------------------------------
     # Tahap 4 — Critic ⇄ Reviser loop
     # ------------------------------------------------------------------
     def _critic_revise_loop(self, draft: TweetDraft) -> ContentPackage:
         """
-        Loop Critic ⇄ Reviser maks self.max_revisions kali.
-        Lacak draft terbaik (skor tertinggi) — bukan hanya yang terakhir.
-        Berhenti lebih awal jika skor ≥ threshold.
+        Loop Critic dengan rewrite otomatis (improved_tweet) maks max_revisions.
+        Lolos jika SEMUA dimensi ≥ min_dimension_score. Lacak hasil terbaik.
         """
         from agents.critic_v2 import review
-        from agents.reviser import revise
 
-        current_draft = draft
-        best_draft = draft
+        min_score = self.config["scoring"].get("min_dimension_score", 6)
+
+        current = draft
+        best = draft
         best_score = -1
         best_verdict = "REJECT"
         best_breakdown: dict = {}
@@ -182,42 +204,48 @@ class Orchestrator:
         any_fallback = False
 
         for iteration in range(self.max_revisions + 1):
-            critic = review(current_draft)
+            critic = review(current)
             if critic.is_fallback:
-                any_fallback = True  # LLM gagal menilai
+                any_fallback = True
 
             if critic.score > best_score:
                 best_score = critic.score
                 best_verdict = critic.verdict
                 best_breakdown = critic.breakdown
-                best_draft = current_draft
+                best = current
 
-            if critic.score >= self.threshold:
-                logger.info("Critic loop berhenti di iterasi %d (skor %d ≥ threshold %d)",
-                            iteration, critic.score, self.threshold)
+            # Lolos: semua dimensi ≥ min
+            if critic.breakdown and all(v >= min_score for v in critic.breakdown.values()):
+                logger.info("Critic loop lolos di iterasi %d (semua dimensi ≥ %d)",
+                            iteration, min_score)
                 break
 
             if iteration == self.max_revisions:
-                break  # habis jatah, pakai best sejauh ini
+                break
 
-            current_draft = revise(current_draft, critic)
+            # Rewrite otomatis pakai improved_tweet dari Critic
+            if not critic.improved_tweet:
+                break  # tidak ada perbaikan yang ditawarkan
+            current = current.model_copy(update={"japanese": critic.improved_tweet})
             revision_count += 1
 
-        # Konten dianggap fallback jika ada penilaian fallback DAN tak ada skor valid
-        is_fallback = any_fallback and best_score <= 0
+        all_pass = bool(best_breakdown) and all(v >= min_score for v in best_breakdown.values())
+        is_fallback = (any_fallback and best_score <= 0) or best.is_fallback
 
         return ContentPackage(
-            topic=best_draft.topic,
-            source_url=best_draft.source_url,
-            angle_type=best_draft.angle_type,
-            japanese=best_draft.japanese,
-            indonesian=best_draft.indonesian,
+            topic=best.topic,
+            source_url=best.source_url,
+            angle_type=best.angle_type,
+            japanese=best.japanese,
+            indonesian=best.indonesian,
             score=max(best_score, 0),
             verdict=best_verdict,
             score_breakdown=best_breakdown,
-            below_threshold=best_score < self.threshold,
+            tone=best.tone,
+            best_posting_time=best.best_posting_time,
+            below_threshold=not all_pass,
             revision_count=revision_count,
-            is_fallback=is_fallback or best_draft.is_fallback,
+            is_fallback=is_fallback,
         )
 
     # ------------------------------------------------------------------

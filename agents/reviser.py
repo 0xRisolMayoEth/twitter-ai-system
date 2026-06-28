@@ -68,13 +68,10 @@ def _build_prompt(
     issues_str = "\n".join(f"  - {i}" for i in critic.issues) if critic.issues else "  (tidak ada)"
     suggestions_str = "\n".join(f"  - {s}" for s in critic.suggestions) if critic.suggestions else "  (tidak ada)"
 
-    # Aspek dengan skor rendah (< 70% dari maks)
-    from agents.critic_v2 import _DEFAULT_WEIGHTS
-    weights = cfg.get("scoring", {}).get("weights", _DEFAULT_WEIGHTS)
+    # Dimensi lemah (skala 1–10, di bawah min_dimension_score)
+    min_score = cfg.get("scoring", {}).get("min_dimension_score", 6)
     weak_aspects = [
-        f"{k} ({v}/{weights.get(k, 1)} poin)"
-        for k, v in critic.breakdown.items()
-        if weights.get(k, 1) > 0 and v / weights.get(k, 1) < 0.70
+        f"{k} ({v}/10)" for k, v in critic.breakdown.items() if v < min_score
     ]
     weak_str = ", ".join(weak_aspects) if weak_aspects else "tidak ada"
 
@@ -89,7 +86,7 @@ def _build_prompt(
 
     return f"""Kamu adalah {persona_name}, editor konten Twitter/X berbahasa Jepang.
 
-Tweet berikut mendapat skor {critic.score}/100 dari reviewer.
+Tweet berikut mendapat skor {critic.score}/10 dari reviewer.
 Tugasmu: tulis ulang tweet ini dengan memperbaiki masalah yang ditemukan.
 
 === TWEET ASLI ===

@@ -1,15 +1,14 @@
 """
-agents/creator.py — Creator agent.
+agents/creator.py — WRITER AGENT (田中サトル, salaryman Tokyo).
 
-Input : StrategistOutput
-Output: TweetDraft (bilingual JP + ID)
+Input : StrategistOutput (trending topic + why_relatable)
+Output: TweetDraft (tweet_text JP 80–140 char + terjemahan ID)
 
-Menulis tweet JP (futsū-form, ≤140 char) dan ID (santai-cerdas)
-berdasarkan angle dari Strategist. Memvalidasi panjang dan retry
-sekali jika JP terlalu panjang.
+Menulis tweet Jepang gaya salaryman sehari-hari (口語体) yang menghubungkan
+trending topic ke pengalaman pribadi salaryman, diakhiri hashtag
+#サラリーマン atau #あるある. Bukan berita, bukan promosi.
 """
 import json
-import logging
 from typing import Optional
 
 from core.config import load_config
@@ -17,55 +16,41 @@ from core.llm import chat
 from core.logger import get_logger
 from core.models import StrategistOutput, TweetDraft
 
-logger = get_logger("creator")
+logger = get_logger("writer")
 
-JP_MAX = 140   # batas karakter tweet Jepang
-ID_MAX = 280   # batas karakter tweet Indonesia
+JP_MAX = 140   # batas atas karakter tweet Jepang
+JP_MIN = 80    # batas bawah ideal
+ID_MAX = 280
 
 
 def create_tweet(strategy: StrategistOutput) -> TweetDraft:
-    """
-    Tulis tweet JP + ID berdasarkan strategy dari Strategist.
-    Retry 1x otomatis jika JP terlalu panjang.
-    """
-    cfg = load_config()
-    persona       = cfg.get("persona", {})
-    tweet_register = cfg.get("tweet_register", "casual")
+    """Tulis tweet salaryman JP + terjemahan ID. Retry 1x bila JP > 140."""
+    persona = load_config().get("persona", {})
 
-    prompt = _build_prompt(strategy, persona, tweet_register)
-
+    prompt = _build_prompt(strategy, persona)
     try:
         raw = chat(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=450,
-            temperature=0.85,
+            temperature=0.9,
         )
-        # truncate=False: preserve overlong JP so the retry check below can fire
         draft = _parse(raw, strategy, truncate=False)
 
-        # Retry sekali jika JP terlalu panjang
         if len(draft.japanese) > JP_MAX:
-            logger.info(
-                "JP terlalu panjang (%d chars), retry dengan constraint lebih ketat",
-                len(draft.japanese),
-            )
-            retry_prompt = _build_retry_prompt(strategy, persona, tweet_register, draft.japanese)
+            logger.info("JP %d chars > %d, retry lebih ketat", len(draft.japanese), JP_MAX)
             raw2 = chat(
-                messages=[{"role": "user", "content": retry_prompt}],
+                messages=[{"role": "user", "content": _build_retry_prompt(strategy, persona, draft.japanese)}],
                 max_tokens=350,
-                temperature=0.6,
+                temperature=0.7,
             )
-            # truncate=True: safety net after retry
             draft = _parse(raw2, strategy, original=draft, truncate=True)
 
-        logger.info(
-            "Creator: JP=%d chars | ID=%d chars | angle=%s",
-            len(draft.japanese), len(draft.indonesian), strategy.angle_type,
-        )
+        logger.info("Writer: JP=%d chars | ID=%d chars | tone=%s",
+                    len(draft.japanese), len(draft.indonesian), draft.tone)
         return draft
 
     except Exception as e:
-        logger.error("Creator LLM error: %s — pakai fallback draft", e)
+        logger.error("Writer LLM error: %s — pakai fallback draft", e)
         return _fallback(strategy)
 
 
@@ -73,98 +58,54 @@ def create_tweet(strategy: StrategistOutput) -> TweetDraft:
 # Prompt builders
 # ------------------------------------------------------------------
 
-def _build_prompt(
-    strategy: StrategistOutput,
-    persona: dict,
-    tweet_register: str,
-) -> str:
-    cfg  = load_config()
-    niche = cfg.get("niche", "")
+def _build_prompt(strategy: StrategistOutput, persona: dict) -> str:
+    name = persona.get("name", "田中サトル")
+    desc = persona.get("description", "salaryman Tokyo biasa")
 
-    jp_register = (
-        "futsū-form (bahasa sehari-hari). Boleh pakai partikel akhir ね/よ/けど, "
-        "sesekali w/笑, kosakata netizen yang wajar. Hindari です/ます berlebihan."
-        if tweet_register == "casual"
-        else "keigo yang sopan tapi tetap mudah dipahami, hindari terlalu formal."
-    )
+    return f"""Kamu adalah {name}.
+{desc}
 
-    persona_name = persona.get("name", "JP Content Creator")
-    persona_desc = persona.get("description", "Content creator Jepang yang informatif dan akrab.")
+Kamu baru lihat trending topic ini dan ingin nge-tweet pengalaman/perasaanmu
+sebagai salaryman — seolah ngobrol sama rekan kerja, bukan baca berita.
 
-    return f"""Kamu adalah {persona_name}.
-{persona_desc}
+TRENDING TOPIC : {strategy.topic}
+KATEGORI       : {strategy.topic_category}
+KENAPA NGENA   : {strategy.why_relatable}
 
-Kamu BARU SAJA membaca berita di bawah dan ingin membagikan PENDAPATMU ke followers.
-Tulis seperti kamu sendiri yang ngetik di X — bukan menyalin judul berita, bukan
-menerjemahkan headline. Kamu punya opini, reaksi, dan sudut pandang.
+=== ATURAN TWEET JEPANG (tweet_text) ===
+• Persona  : 田中サトル, 32th, salaryman Tokyo, commute 1 jam, sering lembur
+• Gaya     : 口語体 (bahasa sehari-hari), personal story, JUJUR & santai
+• WAJIB    : hubungkan trending topic ke pengalaman pribadi salaryman
+• Panjang  : 80–140 karakter Jepang (tiap karakter = 1)
+• Emoji    : pakai 1–3 emoji yang pas (😮‍💨😴🍜💸🚃 dll)
+• Hashtag  : akhiri dengan #サラリーマン ATAU #あるある (pilih satu)
+• DILARANG : terdengar seperti berita, pengumuman, atau promosi
+• DILARANG : politik, bencana, kontroversi
 
-BERITA YANG KAMU BACA:
-TOPIK  : {strategy.topic}
-ANGLE  : {strategy.angle_type} — {strategy.angle_description}
-NICHE  : {niche}
-SUMBER : {strategy.source_url or '(tidak ada)'}
+=== CONTOH NADA ===
+✗ 「○○が話題になっています」(seperti berita)
+✓ 「満員電車で○○のニュース見て、思わず吐きそうになった😮‍💨 #サラリーマン」
+✓ 「今日も残業。○○とか言われても、こっちは定時で帰りたいだけなんだ😴 #あるある」
 
-=== TUGAS ===
-Buat 1 tweet Jepang + 1 tweet Indonesia. Keduanya harus terasa ditulis MANUSIA
-yang punya reaksi pribadi terhadap berita ini, bukan akun bot berita.
-
-=== ATURAN TWEET JEPANG ===
-• Register  : {jp_register}
-• Panjang   : WAJIB ≤ {JP_MAX} karakter (idealnya 60–130; tiap karakter JP = 1)
-• Hook      : Kalimat PERTAMA harus menghentikan scroll. BUKAN judul berita.
-• Sudut     : WAJIB ada reaksi/opini/insight — bukan sekadar "X が発表された".
-• Emoji     : 0–2, hanya jika memperkuat emosi (🤔🔥😳 dll)
-• Hashtag   : 0–1, hanya jika benar-benar relevan
-
-=== VARIASIKAN FORMAT (pilih yang paling pas, jangan selalu sama) ===
-1. Hot take / opini kontroversial : 「正直、これは○○だと思う」
-2. Pertanyaan retoris             : 「これ、もう○○じゃない？」
-3. Did-you-know                   : 「みんな知ってた？実は…」
-4. Reaksi personal                : 「待って、これマジ？」「鳥肌立った」
-5. Mini-insight (kenapa ini penting): fakta + "つまり○○ということ"
-
-=== DILARANG KERAS ===
-✗ Menyalin/menerjemahkan judul berita mentah
-✗ Format "Info terbaru: …" atau "～が発表されました"
-✗ Nada korporat/koran ("非常に興味深い", "正式に発表")
-✗ Hype kosong tanpa isi ("game changer!", "やばすぎ" tanpa alasan)
-
-=== CONTOH BURUK → BAGUS ===
-✗ 「OpenAIついに独自AIチップ開発 ChatGPT支える」
-✓ 「OpenAIが自社チップ作るって、もうGPUメーカー終わりじゃない？🤔
-   Googleに続いてOpenAIまで…半導体業界、激変すぎる」
-
-✗ 「新型AIモデルが正式に発表されました」
-✓ 「正直に言う。これが本当なら、速度もコストも依存度も全部変わる。
-   AIの転換点かもしれない🔥」
-
-=== ATURAN TWEET INDONESIA ===
-• Panjang   : ≤ {ID_MAX} karakter
-• Gaya      : Santai-cerdas, mengalir, seperti ngobrol di Twitter
-• Sudut     : Sampaikan opini/reaksi yang SAMA semangatnya dengan versi JP
-• JANGAN    : terjemahan kata-per-kata, dan JANGAN mulai dengan "Info terbaru:"
+=== TERJEMAHAN INDONESIA (indonesian) ===
+• Santai, mengalir, semangat yang SAMA dengan versi JP (bukan terjemahan kaku)
+• Maks {ID_MAX} karakter
 
 === OUTPUT ===
-Balas HANYA JSON valid, tanpa teks lain:
+Balas HANYA JSON valid:
 {{
-  "japanese": "ここに日本語ツイートを書く (≤{JP_MAX}文字、フックで始める)",
-  "indonesian": "Tulis tweet Indonesia dengan opini/reaksi, bukan terjemahan"
+  "tweet_text": "日本語のツイート (80〜140文字、ハッシュタグで終わる)",
+  "indonesian": "terjemahan/parafrase santai versi Indonesia",
+  "tone": "deskripsi singkat nada (mis. 'capek tapi lucu')",
+  "best_posting_time": "saran waktu posting (mis. '通勤中', '昼休み', '退勤後')"
 }}"""
 
 
-def _build_retry_prompt(
-    strategy: StrategistOutput,
-    persona: dict,
-    tweet_register: str,
-    too_long: str,
-) -> str:
-    base = _build_prompt(strategy, persona, tweet_register)
+def _build_retry_prompt(strategy: StrategistOutput, persona: dict, too_long: str) -> str:
     return (
-        base
-        + f"\n\n⚠️ PERINGATAN: Versi sebelumnya {len(too_long)} karakter — TERLALU PANJANG!\n"
-        f"Versi sebelumnya: {too_long}\n"
-        f"Tulis ulang versi JP maks {JP_MAX} karakter. "
-        f"Pertahankan inti pesan, potong bagian tidak esensial."
+        _build_prompt(strategy, persona)
+        + f"\n\n⚠️ Versi sebelumnya {len(too_long)} karakter — TERLALU PANJANG (maks {JP_MAX}).\n"
+        f"Sebelumnya: {too_long}\nTulis ulang ≤{JP_MAX} karakter, pertahankan inti & hashtag."
     )
 
 
@@ -172,46 +113,39 @@ def _build_retry_prompt(
 # Parsing & validation
 # ------------------------------------------------------------------
 
-def _parse(
-    raw: str,
-    strategy: StrategistOutput,
-    original: Optional[TweetDraft] = None,
-    truncate: bool = True,
-) -> TweetDraft:
-    """Parse JSON dari LLM, validasi, potong jika perlu.
-
-    truncate=False: biarkan JP melewati JP_MAX agar caller bisa cek dan retry.
-    truncate=True : potong sebagai safety net setelah semua upaya selesai.
-    """
+def _parse(raw: str, strategy: StrategistOutput,
+           original: Optional[TweetDraft] = None, truncate: bool = True) -> TweetDraft:
     try:
         start, end = raw.find("{"), raw.rfind("}") + 1
         if start == -1 or end == 0:
             raise ValueError("JSON tidak ditemukan dalam output LLM")
 
         data = json.loads(raw[start:end])
-        jp   = (data.get("japanese")   or "").strip()
+        jp = (data.get("tweet_text") or data.get("japanese") or "").strip()
         indo = (data.get("indonesian") or "").strip()
-
         if not jp:
-            raise ValueError("field 'japanese' kosong")
+            raise ValueError("field 'tweet_text' kosong")
 
         if truncate:
             if len(jp) > JP_MAX:
-                logger.warning("JP masih %d chars setelah retry, dipotong ke %d", len(jp), JP_MAX)
+                logger.warning("JP masih %d chars setelah retry, dipotong", len(jp))
                 jp = jp[:JP_MAX]
             if len(indo) > ID_MAX:
                 indo = indo[:ID_MAX]
 
         return TweetDraft(
             japanese=jp,
-            indonesian=indo or jp,  # fallback ke JP jika ID kosong
+            indonesian=indo or jp,
             topic=strategy.topic,
             angle_type=strategy.angle_type,
             source_url=strategy.source_url,
+            tone=(data.get("tone") or "").strip(),
+            best_posting_time=(data.get("best_posting_time") or "").strip(),
         )
 
     except (json.JSONDecodeError, ValueError) as e:
-        logger.warning("Creator JSON parse gagal (%s), pakai %s", e, "original" if original else "fallback")
+        logger.warning("Writer JSON parse gagal (%s), pakai %s",
+                       e, "original" if original else "fallback")
         return original if original else _fallback(strategy)
 
 
@@ -220,17 +154,13 @@ def _parse(
 # ------------------------------------------------------------------
 
 def _fallback(strategy: StrategistOutput) -> TweetDraft:
-    """
-    Draft darurat jika LLM gagal total. Ditandai is_fallback=True agar
-    orchestrator TIDAK mengirimnya ke Telegram (lebih baik skip daripada
-    kirim konten mentah berkualitas rendah).
-    """
-    jp = f"【{strategy.topic}】"
+    """Draft darurat (is_fallback=True) agar orchestrator men-skip, bukan kirim."""
+    jp = f"【{strategy.topic}】 #サラリーマン"
     if len(jp) > JP_MAX:
         jp = jp[:JP_MAX]
     return TweetDraft(
         japanese=jp,
-        indonesian=f"Info terbaru: {strategy.topic}",
+        indonesian=f"(fallback) {strategy.topic}",
         topic=strategy.topic,
         angle_type=strategy.angle_type,
         source_url=strategy.source_url,

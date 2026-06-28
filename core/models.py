@@ -36,41 +36,68 @@ ANGLE_TYPES = (
 )
 
 class StrategistOutput(BaseModel):
-    """Hasil pemilihan angle oleh Strategist."""
-    topic: str
+    """
+    Hasil pemilihan trend salaryman (TREND AGENT).
+    Field lama (angle_type/angle_description/reasoning) dipertahankan untuk
+    kompatibilitas DB & test; field salaryman baru ada di bawahnya.
+    """
+    topic: str                           # = trending_topic
     source_url: str = ""
-    angle_type: str                      # salah satu dari ANGLE_TYPES
-    angle_description: str              # deskripsi singkat angle yang dipilih
-    reasoning: str                      # alasan LLM memilih angle ini
+    topic_category: str = ""             # commute / overtime / lunch / paycheck / ...
+    why_relatable: str = ""              # kenapa relevan untuk salaryman
+    search_query_for_image: str = ""     # kata kunci awal untuk Image Agent
+    angle_type: str = "relatable"        # disimpan ke DB (diisi = topic_category)
+    angle_description: str = ""          # diisi = why_relatable
+    reasoning: str = ""
 
 
 # ------------------------------------------------------------------
-# 3. Output Creator (Writer)
+# 3. Output Creator (Writer — 田中サトル)
 # ------------------------------------------------------------------
 class TweetDraft(BaseModel):
-    """Draft tweet dua bahasa dari Creator."""
-    japanese: str                        # versi Jepang (≤140 char)
-    indonesian: str                      # versi Indonesia
+    """Draft tweet salaryman (JP) + terjemahan ID."""
+    japanese: str                        # = tweet_text (80–140 char, 口語体)
+    indonesian: str                      # terjemahan/parafrase ID
     topic: str
     angle_type: str
     source_url: str = ""
+    tone: str = ""                       # mis. "lelah tapi lucu", "self-deprecating"
+    best_posting_time: str = ""          # saran waktu posting dari writer
     is_fallback: bool = False            # True jika LLM gagal & ini draft darurat (jangan dikirim)
+
+
+# ------------------------------------------------------------------
+# 3b. Output Image Agent (BARU)
+# ------------------------------------------------------------------
+class ImageRec(BaseModel):
+    """Rekomendasi gambar untuk menemani tweet (bukan generate gambar)."""
+    image_description: str = ""
+    google_search_queries: List[str] = Field(default_factory=list)  # 3 query (2 EN + 1 JP)
+    image_style: str = ""
+    reason: str = ""
+    is_fallback: bool = False
 
 
 # ------------------------------------------------------------------
 # 4. Output Critic
 # ------------------------------------------------------------------
 class CriticResult(BaseModel):
-    """Hasil penilaian dari Critic (skor 0-100 dengan rubrik per aspek)."""
-    score: int                           # total 0-100
-    verdict: str = "REVISE"              # APPROVED | GOOD | REVISE | REJECT
-    breakdown: Dict[str, int] = Field(  # skor per aspek
+    """
+    Hasil penilaian Critic salaryman.
+    4 dimensi (1–10): relatability, naturalness, engagement, topic_fit.
+    Jika SALAH SATU dimensi < 6 → verdict REJECT + improved_tweet (rewrite).
+    """
+    score: int                           # total_score 0–10 (rata-rata dibulatkan)
+    verdict: str = "REJECT"              # APPROVE | REJECT
+    breakdown: Dict[str, int] = Field(  # skor per dimensi (1–10)
         default_factory=dict
-        # contoh: {"hook": 22, "engagement": 16, "naturalness": 18, ...}
+        # contoh: {"relatability": 8, "naturalness": 7, "engagement": 6, "topic_fit": 9}
     )
-    issues: List[str] = Field(default_factory=list)       # masalah yang ditemukan
-    suggestions: List[str] = Field(default_factory=list)  # saran perbaikan spesifik
-    is_fallback: bool = False            # True jika ini hasil fallback (LLM gagal), bukan penilaian asli
+    improved_tweet: str = ""             # hasil rewrite otomatis jika REJECT
+    feedback: str = ""                   # ringkasan masukan
+    issues: List[str] = Field(default_factory=list)
+    suggestions: List[str] = Field(default_factory=list)
+    is_fallback: bool = False            # True jika ini hasil fallback (LLM gagal)
 
 
 # ------------------------------------------------------------------
@@ -83,10 +110,13 @@ class ContentPackage(BaseModel):
     angle_type: str
     japanese: str
     indonesian: str
-    score: int
-    verdict: str = "REVISE"              # APPROVED | GOOD | REVISE | REJECT
+    score: int                           # total_score 0–10
+    verdict: str = "REJECT"             # APPROVE | REJECT
     score_breakdown: Dict[str, int] = Field(default_factory=dict)
-    below_threshold: bool = False        # True jika skor < threshold setelah N revisi
+    tone: str = ""
+    best_posting_time: str = ""
+    image: Optional[ImageRec] = None     # rekomendasi gambar dari Image Agent
+    below_threshold: bool = False        # True jika ada dimensi < 6 setelah N revisi
     revision_count: int = 0
     is_fallback: bool = False            # True jika konten berasal dari fallback (LLM gagal)
 
