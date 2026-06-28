@@ -83,6 +83,7 @@ Berikut postingan orang lain (bahasa Jepang) yang ingin kamu komentari:
 
 LANGKAH 1 — PAHAMI dulu isinya: apa inti postingan ini, apa emosi/maksudnya,
 dan apa detail spesifik yang bisa kamu tanggapi. JANGAN balas template umum.
+Tuliskan ringkasannya 1 kalimat singkat dalam bahasa Indonesia ("summary").
 
 LANGKAH 2 — Buat {N_COMMENTS} SARAN komentar berbeda. Tujuan: ENGAGEMENT &
 VIEW tinggi. Tiap komentar:
@@ -90,8 +91,9 @@ VIEW tinggi. Tiap komentar:
   bukan komentar yang bisa ditempel ke postingan apa pun)
 • Bahasa Jepang SANTAI seperti ngobrol sama teman (口語体/タメ口 wajar,
   boleh ね/よ/じゃん/わ/笑). Bukan kaku, bukan formal.
-• JANGAN terlalu pendek — buat yang berisi, kira-kira 1–2 kalimat
-  (sekitar 40–120 karakter), terasa seperti orang sungguhan menanggapi
+• PANJANG PAS — MAKSIMAL 2 kalimat, tapi MINIMAL 10 kata. Jangan satu kalimat
+  pendek, jangan juga kepanjangan. Berisi: reaksi + alasan/pengalaman singkat
+  (boleh diakhiri pertanyaan) supaya terasa hidup & ngajak ngobrol.
 • Tiap komentar punya sudut berbeda: empati/setuju, pertanyaan yang memancing
   balasan, atau humor ringan yang relatable
 • Boleh 0–2 emoji bila pas
@@ -105,6 +107,7 @@ Untuk tiap komentar Jepang, sertakan terjemahan Indonesianya (santai, natural).
 
 Balas HANYA JSON valid:
 {{
+  "summary": "ringkasan 1 kalimat isi konten (bahasa Indonesia)",
   "comments": [
     {{"japanese": "コメント1", "indonesian": "terjemahan 1", "angle": "empati|pertanyaan|humor"}},
     {{"japanese": "コメント2", "indonesian": "terjemahan 2", "angle": "..."}},
@@ -134,24 +137,35 @@ def _parse(raw: str, jp_text: str) -> CommentSet:
                                 angle=(it.get("angle") or "").strip()))
     if not comments:
         raise ValueError("tidak ada komentar valid")
-    return CommentSet(comments=comments[:N_COMMENTS], source_text=jp_text)
+    return CommentSet(
+        comments=comments[:N_COMMENTS],
+        source_text=jp_text,
+        summary=(data.get("summary") or "").strip(),
+    )
 
 
 def _fallback(jp_text: str) -> CommentSet:
     """Saran komentar darurat (aman & netral) bila LLM gagal."""
     return CommentSet(
         comments=[
-            Comment(japanese="いやこれめっちゃ分かるわ…自分も同じこと思ってたとこ！",
-                    indonesian="Ini relatable banget sih… gue juga lagi mikirin hal yang sama!",
+            Comment(japanese="いやこれめっちゃ分かるわ、自分も全く同じこと思ってたとこ。"
+                             "言葉にしてくれてなんかスッキリした！",
+                    indonesian="Ini relatable banget, gue juga lagi mikirin hal yang persis sama. "
+                               "Lega ada yang ngomongin!",
                     angle="empati"),
-            Comment(japanese="ちなみにこういうの、みんなはどうやって乗り切ってるんだろ？気になる〜",
-                    indonesian="Btw kalau yang kayak gini, pada ngadepinnya gimana ya? Penasaran~",
+            Comment(japanese="これ気になるんだけど、みんなはこういう時どうやって乗り切ってるの？"
+                             "自分はいつも悩んじゃうんだよね。",
+                    indonesian="Ini bikin penasaran, kalau lagi gini kalian ngadepinnya gimana? "
+                               "Gue selalu bingung sih.",
                     angle="pertanyaan"),
-            Comment(japanese="朝からこれはなかなか効くやつだわ…笑 でもなんか元気もらった！",
-                    indonesian="Dari pagi udah kena yang kayak gini wkwk tapi malah jadi semangat!",
+            Comment(japanese="朝からこれはなかなか効くやつだわ、正直ちょっと笑っちゃった。"
+                             "でもなんだかんだで元気もらえたかも！",
+                    indonesian="Dari pagi udah kena yang kayak gini, jujur sempet ketawa. "
+                               "Tapi malah jadi dapet semangat!",
                     angle="humor"),
         ],
         source_text=jp_text,
+        summary="(ringkasan tidak tersedia — LLM sedang tidak tersedia)",
         is_fallback=True,
     )
 
@@ -168,9 +182,11 @@ def format_reply(cs: CommentSet) -> str:
         return "⚠️ Maaf, tidak ada teks Jepang yang bisa kubaca dari gambar itu."
 
     parts = ["💬 <b>3 Saran Komentar</b>"]
+    if cs.summary:
+        parts.append(f"📄 <b>Isi konten:</b> {html.escape(cs.summary)}")
     if cs.source_text:
         src = html.escape(cs.source_text[:120])
-        parts.append(f"<i>Postingan:</i> {src}")
+        parts.append(f"<i>Teks asli:</i> {src}")
     if cs.is_fallback:
         parts.append("⚠️ <i>(saran umum — LLM sedang tidak tersedia)</i>")
     parts.append("")

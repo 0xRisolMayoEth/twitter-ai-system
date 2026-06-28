@@ -12,12 +12,15 @@ from core.models import Comment, CommentSet
 from agents import comment_agent as ca
 
 
-def _resp(n=3):
+def _resp(n=3, summary="Postingan soal kereta pagi yang penuh."):
     angles = ["empati", "pertanyaan", "humor"]
-    return json.dumps({"comments": [
-        {"japanese": f"コメント{i}", "indonesian": f"komentar {i}", "angle": angles[i % 3]}
-        for i in range(n)
-    ]})
+    return json.dumps({
+        "summary": summary,
+        "comments": [
+            {"japanese": f"コメント{i}", "indonesian": f"komentar {i}", "angle": angles[i % 3]}
+            for i in range(n)
+        ],
+    })
 
 
 class TestParse(unittest.TestCase):
@@ -43,6 +46,15 @@ class TestParse(unittest.TestCase):
         ]})
         cs = ca._parse(raw, "x")
         self.assertEqual(len(cs.comments), 1)
+
+    def test_summary_parsed(self):
+        cs = ca._parse(_resp(summary="Ringkasan isi konten."), "x")
+        self.assertEqual(cs.summary, "Ringkasan isi konten.")
+
+    def test_missing_summary_defaults_empty(self):
+        raw = json.dumps({"comments": [{"japanese": "コメント", "indonesian": "k"}]})
+        cs = ca._parse(raw, "x")
+        self.assertEqual(cs.summary, "")
 
     def test_invalid_json_raises(self):
         with self.assertRaises(ValueError):
@@ -105,8 +117,14 @@ class TestFormatReply(unittest.TestCase):
         cs = ca._parse(_resp(), "投稿テキスト")
         msg = ca.format_reply(cs)
         self.assertIn("3 Saran Komentar", msg)
-        self.assertIn("<code>コメント0</code>", msg)
+        self.assertIn("<code>コメント0</code>", msg)  # JP tap-to-copy
         self.assertIn("🇮🇩", msg)
+
+    def test_shows_content_summary(self):
+        cs = ca._parse(_resp(summary="Soal commute pagi."), "投稿")
+        msg = ca.format_reply(cs)
+        self.assertIn("Isi konten:", msg)
+        self.assertIn("Soal commute pagi.", msg)
 
     def test_empty_commentset_message(self):
         msg = ca.format_reply(CommentSet(comments=[], is_fallback=True))

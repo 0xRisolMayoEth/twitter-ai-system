@@ -29,7 +29,7 @@ def get_vision_model() -> str:
     return (
         os.getenv("VISION_MODEL")
         or os.getenv("LLM_VISION_MODEL")
-        or "openai/gpt-4o-mini"
+        or "google/gemini-2.0-flash-001"
     )
 
 
