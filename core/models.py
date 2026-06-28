@@ -135,6 +135,7 @@ class CommentSet(BaseModel):
     """Kumpulan saran komentar untuk satu postingan (dari screenshot)."""
     comments: List[Comment] = Field(default_factory=list)
     source_text: str = ""                # teks Jepang yang terbaca dari gambar
+    summary: str = ""                    # ringkasan isi konten (bahasa Indonesia)
     is_fallback: bool = False
 
 

@@ -83,6 +83,7 @@ Berikut postingan orang lain (bahasa Jepang) yang ingin kamu komentari:
 
 LANGKAH 1 — PAHAMI dulu isinya: apa inti postingan ini, apa emosi/maksudnya,
 dan apa detail spesifik yang bisa kamu tanggapi. JANGAN balas template umum.
+Tuliskan ringkasannya 1 kalimat singkat dalam bahasa Indonesia ("summary").
 
 LANGKAH 2 — Buat {N_COMMENTS} SARAN komentar berbeda. Tujuan: ENGAGEMENT &
 VIEW tinggi. Tiap komentar:
@@ -105,6 +106,7 @@ Untuk tiap komentar Jepang, sertakan terjemahan Indonesianya (santai, natural).
 
 Balas HANYA JSON valid:
 {{
+  "summary": "ringkasan 1 kalimat isi konten (bahasa Indonesia)",
   "comments": [
     {{"japanese": "コメント1", "indonesian": "terjemahan 1", "angle": "empati|pertanyaan|humor"}},
     {{"japanese": "コメント2", "indonesian": "terjemahan 2", "angle": "..."}},
@@ -134,7 +136,11 @@ def _parse(raw: str, jp_text: str) -> CommentSet:
                                 angle=(it.get("angle") or "").strip()))
     if not comments:
         raise ValueError("tidak ada komentar valid")
-    return CommentSet(comments=comments[:N_COMMENTS], source_text=jp_text)
+    return CommentSet(
+        comments=comments[:N_COMMENTS],
+        source_text=jp_text,
+        summary=(data.get("summary") or "").strip(),
+    )
 
 
 def _fallback(jp_text: str) -> CommentSet:
@@ -152,6 +158,7 @@ def _fallback(jp_text: str) -> CommentSet:
                     angle="humor"),
         ],
         source_text=jp_text,
+        summary="(ringkasan tidak tersedia — LLM sedang tidak tersedia)",
         is_fallback=True,
     )
 
@@ -168,9 +175,11 @@ def format_reply(cs: CommentSet) -> str:
         return "⚠️ Maaf, tidak ada teks Jepang yang bisa kubaca dari gambar itu."
 
     parts = ["💬 <b>3 Saran Komentar</b>"]
+    if cs.summary:
+        parts.append(f"📄 <b>Isi konten:</b> {html.escape(cs.summary)}")
     if cs.source_text:
         src = html.escape(cs.source_text[:120])
-        parts.append(f"<i>Postingan:</i> {src}")
+        parts.append(f"<i>Teks asli:</i> {src}")
     if cs.is_fallback:
         parts.append("⚠️ <i>(saran umum — LLM sedang tidak tersedia)</i>")
     parts.append("")
